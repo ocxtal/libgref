@@ -806,7 +806,6 @@ void ref_pack_kmer_sec(
 	/* seed-related consts */
 	uint64_t const seed_len = prec->params.seed_length;
 	uint64_t const prefetch_len = seed_len - 1;
-	uint64_t const shift_len = 2 * (seed_len - 1);
 
 	/* working variables */
 	struct ref_pack_kmer_work_s w = {
@@ -865,7 +864,7 @@ void ref_pack_kmer(
 {
 	/* init buffer */
 	uint64_t size = (uint64_t)pow(3.0, prec->params.seed_length * 0.5);
-	uint64_t *buf = (uint64_t *)malloc(size);
+	uint64_t *buf = (uint64_t *)malloc(MAX2(size, 1024));
 
 	for(int64_t i = 0; i < prec->next_id; i++) {
 		debug("pack_kmer id(%lld), base(%llu), len(%u)",
