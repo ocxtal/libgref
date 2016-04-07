@@ -353,7 +353,7 @@ char *ut_build_nm_cmd(
 	}
 
 	/* cat name */
-	char *cmd = (char *)malloc(strlen(cmd_base) + strlen(filename));
+	char *cmd = (char *)malloc(strlen(cmd_base) + strlen(filename) + 1);
 	strcpy(cmd, cmd_base);
 	strcat(cmd, filename);
 
