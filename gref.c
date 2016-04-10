@@ -82,6 +82,7 @@ struct gref_section_intl_s {
 	uint32_t rv_link_idx_base;
 	uint32_t reserved2;
 };
+_static_assert(sizeof(hmap_header_t) == sizeof(struct gref_section_s));
 _static_assert(sizeof(struct gref_section_intl_s) == 48);
 
 /**
