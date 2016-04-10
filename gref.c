@@ -1,6 +1,6 @@
 
 /**
- * @file ref.c
+ * @file gref.c
  *
  * @brief reference sequence indexer and searcher.
  *
@@ -47,26 +47,26 @@
  */
 
 /**
- * @struct ref_gid_pair_s
+ * @struct gref_gid_pair_s
  */
-struct ref_gid_pair_s {
+struct gref_gid_pair_s {
 	int32_t from;
 	int32_t to;
 };
 
 /**
- * @struct ref_seq_interval_s
+ * @struct gref_seq_interval_s
  */
-struct ref_seq_interval_s {
+struct gref_seq_interval_s {
 	uint64_t base;
 	uint64_t tail;
 };
 
 /**
- * @struct ref_section_intl_s
- * @brief sizeof(ref_section_intl_s) == 48
+ * @struct gref_section_intl_s
+ * @brief sizeof(gref_section_intl_s) == 48
  */
-struct ref_section_intl_s {
+struct gref_section_intl_s {
 	hmap_header_t header;
 
 	/* forward link index */
@@ -75,21 +75,21 @@ struct ref_section_intl_s {
 	/* splitted section link (used to get original name) */
 	uint32_t base_id;
 
-	/* ref_section_s compatible */
-	struct ref_section_s sec;
+	/* gref_section_s compatible */
+	struct gref_section_s sec;
 
 	/* reverse link index */
 	uint32_t rv_link_idx_base;
 	uint32_t reserved2;
 };
-_static_assert(sizeof(struct ref_section_intl_s) == 48);
+_static_assert(sizeof(struct gref_section_intl_s) == 48);
 
 /**
- * @struct ref_section_intl_half_s
+ * @struct gref_section_intl_half_s
  * @brief former half of the section_intl_s
  */
-struct ref_section_intl_half_s {
-	/* ref_section_s compatible */
+struct gref_section_intl_half_s {
+	/* gref_section_s compatible */
 	uint32_t reserved1[2];
 	uint64_t reserved2;
 
@@ -97,22 +97,22 @@ struct ref_section_intl_half_s {
 	uint32_t link_idx_base;
 	uint32_t reserved3;
 };
-_static_assert(sizeof(struct ref_section_intl_half_s) == 24);
+_static_assert(sizeof(struct gref_section_intl_half_s) == 24);
 
 /**
- * @struct ref_hash_tuple_s
+ * @struct gref_hash_tuple_s
  */
-struct ref_hash_tuple_s {
+struct gref_hash_tuple_s {
 	uint64_t kmer;
-	struct ref_gid_pos_s p;
+	struct gref_gid_pos_s p;
 };
-typedef kvec_t(struct ref_hash_tuple_s) kvec_tuple_t;
+typedef kvec_t(struct gref_hash_tuple_s) kvec_tuple_t;
 
 /**
- * @struct ref_prec_s
+ * @struct gref_prec_s
  * @brief reference index precursor
  */
-struct ref_prec_s {
+struct gref_prec_s {
 	/* name -> section mapping */
 	hmap_t *hmap;					/* name -> section_info hashmap */
 
@@ -121,7 +121,7 @@ struct ref_prec_s {
 	uint64_t seq_rem;
 
 	/* link info container */
-	kvec_t(struct ref_gid_pair_s) link;
+	kvec_t(struct gref_gid_pair_s) link;
 	// uint64_t next_id;
 
 	/* reserved */
@@ -130,13 +130,13 @@ struct ref_prec_s {
 	void *reserved3;
 
 	/* params */
-	struct ref_params_s params;
+	struct gref_params_s params;
 };
 
 /**
- * @struct ref_s
+ * @struct gref_s
  */
-struct ref_s {
+struct gref_s {
 	/* name -> section mapping */
 	hmap_t *hmap;					/* name -> section_info hashmap */
 
@@ -151,21 +151,21 @@ struct ref_s {
 
 	int64_t *kmer_idx_table;
 	int64_t kmer_table_size;
-	struct ref_gid_pos_s *kmer_table;
+	struct gref_gid_pos_s *kmer_table;
 
 	/* params */
-	struct ref_params_s params;
+	struct gref_params_s params;
 };
-_static_assert(sizeof(struct ref_prec_s) == sizeof(struct ref_s));
-_static_assert_offset(struct ref_prec_s, hmap, struct ref_s, hmap, 0);
-_static_assert_offset(struct ref_prec_s, seq, struct ref_s, seq, 0);
-_static_assert_offset(struct ref_prec_s, params, struct ref_s, params, 0);
+_static_assert(sizeof(struct gref_prec_s) == sizeof(struct gref_s));
+_static_assert_offset(struct gref_prec_s, hmap, struct gref_s, hmap, 0);
+_static_assert_offset(struct gref_prec_s, seq, struct gref_s, seq, 0);
+_static_assert_offset(struct gref_prec_s, params, struct gref_s, params, 0);
 
 /**
- * @fn ref_prec_init
+ * @fn gref_prec_init
  */
-ref_prec_t *ref_prec_init(
-	ref_params_t const *params)
+gref_prec_t *gref_prec_init(
+	gref_params_t const *params)
 {
 	/* check sanity of params */
 	if(params == NULL) {
@@ -177,13 +177,13 @@ ref_prec_t *ref_prec_init(
 	}
 
 	/* malloc mem */
-	struct ref_prec_s *prec = (struct ref_prec_s *)malloc(sizeof(struct ref_prec_s));
+	struct gref_prec_s *prec = (struct gref_prec_s *)malloc(sizeof(struct gref_prec_s));
 	if(prec == NULL) {
 		return(NULL);
 	}
 
 	/* fill default params and malloc mems */
-	prec->hmap = hmap_init(1024, sizeof(struct ref_section_intl_s));
+	prec->hmap = hmap_init(1024, sizeof(struct gref_section_intl_s));
 
 	kv_init(prec->seq);
 	kv_push(prec->seq, 0);
@@ -194,16 +194,16 @@ ref_prec_t *ref_prec_init(
 	prec->params = *params;
 
 
-	return((ref_prec_t *)prec);
+	return((gref_prec_t *)prec);
 }
 
 /**
- * @fn ref_prec_clean
+ * @fn gref_prec_clean
  */
-void ref_prec_clean(
-	ref_prec_t *_prec)
+void gref_prec_clean(
+	gref_prec_t *_prec)
 {
-	struct ref_prec_s *prec = (struct ref_prec_s *)_prec;
+	struct gref_prec_s *prec = (struct gref_prec_s *)_prec;
 
 	if(prec != NULL) {
 		/* cleanup, cleanup... */
@@ -215,11 +215,11 @@ void ref_prec_clean(
 }
 
 /**
- * @fn ref_encode_2bit
+ * @fn gref_encode_2bit
  * @brief mapping IUPAC amb. to 2bit encoding
  */
 static _force_inline
-uint8_t ref_encode_2bit(
+uint8_t gref_encode_2bit(
 	int c)
 {
 	/* convert to upper case and subtract offset by 0x40 */
@@ -244,11 +244,11 @@ uint8_t ref_encode_2bit(
 }
 
 /**
- * @fn ref_encode_4bit
+ * @fn gref_encode_4bit
  * @brief mapping IUPAC amb. to 4bit encoding
  */
 static _force_inline
-uint8_t ref_encode_4bit(
+uint8_t gref_encode_4bit(
 	char c)
 {
 	/* convert to upper case and subtract offset by 0x40 */
@@ -283,12 +283,12 @@ uint8_t ref_encode_4bit(
 }
 
 /**
- * @fn ref_append_sequence
+ * @fn gref_append_sequence
  * @brief append nucleotide sequence, must be null-terminated, accept IUPAC ambiguous encoding
  */
 static _force_inline
-struct ref_seq_interval_s ref_append_sequence(
-	struct ref_prec_s *prec,
+struct gref_seq_interval_s gref_append_sequence(
+	struct gref_prec_s *prec,
 	char const *seq,
 	int64_t len)
 {
@@ -303,7 +303,7 @@ struct ref_seq_interval_s ref_append_sequence(
 
 	/* push until ptr reaches the end of the seq */
 	for(int64_t i = 0; i < len; i++) {
-		arr = (arr>>4) | ((uint64_t)ref_encode_4bit(seq[i])<<(64 - 4));
+		arr = (arr>>4) | ((uint64_t)gref_encode_4bit(seq[i])<<(64 - 4));
 		debug("rem(%llu), arr(%llx)", rem, arr);
 		if((rem -= 4) == 0) {
 			kv_at(prec->seq, kv_size(prec->seq) - 1) = arr;
@@ -322,39 +322,39 @@ struct ref_seq_interval_s ref_append_sequence(
 	uint64_t tail = (64 * kv_size(prec->seq) - rem) / 4;
 	debug("base(%llu), tail(%llu)", base, tail);
 
-	return((struct ref_seq_interval_s){
+	return((struct gref_seq_interval_s){
 		.base = base,
 		.tail = tail
 	});
 }
 
 /**
- * @fn ref_append_segment
+ * @fn gref_append_segment
  */
-int ref_append_segment(
-	ref_prec_t *_prec,
+int gref_append_segment(
+	gref_prec_t *_prec,
 	char const *name,
 	int32_t name_len,
 	char const *seq,
 	int64_t seq_len)
 {
-	struct ref_prec_s *prec = (struct ref_prec_s *)_prec;
+	struct gref_prec_s *prec = (struct gref_prec_s *)_prec;
 	debug("append segment");
 
 	/* add sequence at the tail of the seq buffer */
-	struct ref_seq_interval_s iv = ref_append_sequence(prec, seq, seq_len);
+	struct gref_seq_interval_s iv = gref_append_sequence(prec, seq, seq_len);
 
 	/* append the first section */
 	uint64_t const max_sec_len = 0x80000000;
 	uint64_t len = MIN2(iv.tail - iv.base, max_sec_len);
 
 	uint32_t id = hmap_get_id(prec->hmap, name, name_len);
-	struct ref_section_intl_s *sec =
-		(struct ref_section_intl_s *)hmap_get_object(prec->hmap, id);
+	struct gref_section_intl_s *sec =
+		(struct gref_section_intl_s *)hmap_get_object(prec->hmap, id);
 
 	/* store section info */
 	sec->base_id = id;
-	sec->sec = (struct ref_section_s){
+	sec->sec = (struct gref_section_s){
 		.id = id,
 		.len = len,
 		.base = iv.base
@@ -363,10 +363,10 @@ int ref_append_segment(
 }
 
 /**
- * @fn ref_append_link
+ * @fn gref_append_link
  */
-int ref_append_link(
-	ref_prec_t *_prec,
+int gref_append_link(
+	gref_prec_t *_prec,
 	char const *src,
 	int32_t src_len,
 	int32_t src_ori,
@@ -374,7 +374,7 @@ int ref_append_link(
 	int32_t dst_len,
 	int32_t dst_ori)
 {
-	struct ref_prec_s *prec = (struct ref_prec_s *)_prec;
+	struct gref_prec_s *prec = (struct gref_prec_s *)_prec;
 	debug("append link");
 
 	/* get ids */
@@ -382,13 +382,13 @@ int ref_append_link(
 	uint32_t dst_id = hmap_get_id(prec->hmap, dst, dst_len);
 
 	/* add forward link */
-	kv_push(prec->link, ((struct ref_gid_pair_s){
+	kv_push(prec->link, ((struct gref_gid_pair_s){
 		.from = _encode_id(src_id, src_ori),
 		.to = _encode_id(dst_id, dst_ori)
 	}));
 
 	/* add reverse link */
-	kv_push(prec->link, ((struct ref_gid_pair_s){
+	kv_push(prec->link, ((struct gref_gid_pair_s){
 		.from = _encode_id(dst_id, _rev(dst_ori)),
 		.to = _encode_id(src_id, _rev(src_ori))
 	}));
@@ -396,12 +396,12 @@ int ref_append_link(
 }
 
 /**
- * @fn ref_get_base
+ * @fn gref_get_base
  */
 static _force_inline
-uint8_t ref_get_base(
-	struct ref_prec_s const *prec,
-	struct ref_section_s const *sec,
+uint8_t gref_get_base(
+	struct gref_prec_s const *prec,
+	struct gref_section_s const *sec,
 	uint32_t dir,
 	uint32_t pos)
 {
@@ -413,19 +413,19 @@ uint8_t ref_get_base(
 }
 
 /**
- * @struct ref_pack_kmer_work_s
+ * @struct gref_pack_kmer_work_s
  */
-struct ref_pack_kmer_work_s {
+struct gref_pack_kmer_work_s {
 	uint64_t curr, cnt_arr;
 };
 
 /**
- * @fn ref_pack_kmer_sec_update
+ * @fn gref_pack_kmer_sec_update
  */
 static _force_inline
-struct ref_pack_kmer_work_s ref_pack_kmer_sec_update(
-	struct ref_prec_s *prec,
-	struct ref_pack_kmer_work_s w,
+struct gref_pack_kmer_work_s gref_pack_kmer_sec_update(
+	struct gref_prec_s *prec,
+	struct gref_pack_kmer_work_s w,
 	uint64_t *buf,
 	uint8_t c)
 {
@@ -502,12 +502,12 @@ struct ref_pack_kmer_work_s ref_pack_kmer_sec_update(
 }
 
 /**
- * @fn ref_pack_kmer_sec_push
+ * @fn gref_pack_kmer_sec_push
  */
 static _force_inline
-void ref_pack_kmer_sec_push(
-	struct ref_prec_s *prec,
-	struct ref_pack_kmer_work_s w,
+void gref_pack_kmer_sec_push(
+	struct gref_prec_s *prec,
+	struct gref_pack_kmer_work_s w,
 	uint64_t *buf,
 	kvec_tuple_t *tuple_vec,
 	uint32_t sec_id,
@@ -519,7 +519,7 @@ void ref_pack_kmer_sec_push(
 
 	for(int64_t i = 0; i < w.curr; i++) {
 		/* push forward */
-		kv_push(*tuple_vec, ((struct ref_hash_tuple_s){
+		kv_push(*tuple_vec, ((struct gref_hash_tuple_s){
 			.kmer = buf[i],
 			.p.gid = fw_gid,
 			.p.pos = pos
@@ -529,11 +529,11 @@ void ref_pack_kmer_sec_push(
 }
 
 /**
- * @fn ref_pack_kmer_sec
+ * @fn gref_pack_kmer_sec
  */
 static _force_inline
-void ref_pack_kmer_sec(
-	struct ref_prec_s *prec,
+void gref_pack_kmer_sec(
+	struct gref_prec_s *prec,
 	kvec_tuple_t *tuple_vec,
 	uint64_t *buf,
 	uint32_t *link_idx,
@@ -544,31 +544,31 @@ void ref_pack_kmer_sec(
 	uint64_t const prefetch_len = seed_len - 1;
 
 	/* working variables */
-	struct ref_pack_kmer_work_s w = {
+	struct gref_pack_kmer_work_s w = {
 		.curr = 1,
 		.cnt_arr = 0
 	};
 
 	/* section */
-	struct ref_section_intl_s const *sec =
-		(struct ref_section_intl_s const *)hmap_get_object(prec->hmap, sec_id);
+	struct gref_section_intl_s const *sec =
+		(struct gref_section_intl_s const *)hmap_get_object(prec->hmap, sec_id);
 	debug("seed_len(%llu), prefetch_len(%llu)",
 		seed_len, prefetch_len);
 
 	/* prefetch */
 	buf[0] = 0;
 	for(int64_t i = 0; i < prefetch_len; i++) {
-		debug("i(%lld), c(%x)", i, ref_get_base(prec, &sec->sec, 0, i));
-		w = ref_pack_kmer_sec_update(prec, w, buf,
-			ref_get_base(prec, &sec->sec, 0, i));
+		debug("i(%lld), c(%x)", i, gref_get_base(prec, &sec->sec, 0, i));
+		w = gref_pack_kmer_sec_update(prec, w, buf,
+			gref_get_base(prec, &sec->sec, 0, i));
 	}
 
 	/* body */
 	for(int64_t i = prefetch_len; i < sec->sec.len; i++) {
-		debug("i(%lld), c(%x)", i, ref_get_base(prec, &sec->sec, 0, i));
-		w = ref_pack_kmer_sec_update(prec, w, buf,
-			ref_get_base(prec, &sec->sec, 0, i));
-		ref_pack_kmer_sec_push(prec, w, buf, tuple_vec,
+		debug("i(%lld), c(%x)", i, gref_get_base(prec, &sec->sec, 0, i));
+		w = gref_pack_kmer_sec_update(prec, w, buf,
+			gref_get_base(prec, &sec->sec, 0, i));
+		gref_pack_kmer_sec_push(prec, w, buf, tuple_vec,
 			sec_id, i - prefetch_len);
 	}
 
@@ -579,17 +579,17 @@ void ref_pack_kmer_sec(
 		uint32_t next_sec_dir = _decode_dir(link_idx[j]);
 
 		/* copy curr and cnt_arr */
-		struct ref_pack_kmer_work_s tw = w;
+		struct gref_pack_kmer_work_s tw = w;
 
-		struct ref_section_intl_s const *next_sec =
-			(struct ref_section_intl_s const *)hmap_get_object(prec->hmap, next_sec_id);
+		struct gref_section_intl_s const *next_sec =
+			(struct gref_section_intl_s const *)hmap_get_object(prec->hmap, next_sec_id);
 
 		debug("link_idx(%lld), link to %u", j, next_sec_id);
 		for(int64_t i = 0; i < prefetch_len; i++) {
-			debug("i(%lld), c(%x)", i, ref_get_base(prec, &next_sec->sec, next_sec_dir, i));
-			tw = ref_pack_kmer_sec_update(prec, tw, buf,
-				ref_get_base(prec, &next_sec->sec, next_sec_dir, i));
-			ref_pack_kmer_sec_push(prec, tw, buf, tuple_vec,
+			debug("i(%lld), c(%x)", i, gref_get_base(prec, &next_sec->sec, next_sec_dir, i));
+			tw = gref_pack_kmer_sec_update(prec, tw, buf,
+				gref_get_base(prec, &next_sec->sec, next_sec_dir, i));
+			gref_pack_kmer_sec_push(prec, tw, buf, tuple_vec,
 				sec_id, i + sec->sec.len - prefetch_len);
 		}
 	}
@@ -597,12 +597,12 @@ void ref_pack_kmer_sec(
 }
 
 /**
- * @fn ref_pack_kmer
+ * @fn gref_pack_kmer
  * @brief pack kmer, sec must be sorted by local id
  */
 static _force_inline
-void ref_pack_kmer(
-	struct ref_prec_s *prec,
+void gref_pack_kmer(
+	struct gref_prec_s *prec,
 	uint32_t tail_id,
 	kvec_tuple_t *tuple_vec,
 	uint32_t *link_idx)
@@ -614,18 +614,18 @@ void ref_pack_kmer(
 	debug("tail_id(%u)", tail_id);
 	for(int64_t i = 0; i < tail_id; i++) {
 		debug("pack_kmer id(%lld)", i);
-		ref_pack_kmer_sec(prec, tuple_vec, buf, link_idx, i);
+		gref_pack_kmer_sec(prec, tuple_vec, buf, link_idx, i);
 	}
 	free(buf);
 	return;
 }
 
 /**
- * @fn ref_build_kmer_idx_table
+ * @fn gref_build_kmer_idx_table
  */
 static _force_inline
-int64_t *ref_build_kmer_idx_table(
-	struct ref_prec_s *prec,
+int64_t *gref_build_kmer_idx_table(
+	struct gref_prec_s *prec,
 	kvec_tuple_t *tuple_vec)
 {
 	kvec_t(int64_t) kmer_idx;
@@ -660,35 +660,35 @@ int64_t *ref_build_kmer_idx_table(
 }
 
 /**
- * @fn ref_build_kmer_shrink_table
+ * @fn gref_build_kmer_shrink_table
  */
-struct ref_kmer_table_s {
+struct gref_kmer_table_s {
 	int64_t *kmer_idx_table;
 	int64_t kmer_table_size;
-	struct ref_gid_pos_s *kmer_table;
+	struct gref_gid_pos_s *kmer_table;
 };
 static _force_inline
-struct ref_kmer_table_s ref_build_kmer_shrink_table(
-	struct ref_prec_s *prec,
+struct gref_kmer_table_s gref_build_kmer_shrink_table(
+	struct gref_prec_s *prec,
 	kvec_tuple_t *tuple_vec)
 {
-	struct ref_gid_pos_s *packed_pos = (struct ref_gid_pos_s *)kv_ptr(*tuple_vec);
+	struct gref_gid_pos_s *packed_pos = (struct gref_gid_pos_s *)kv_ptr(*tuple_vec);
 	for(int64_t i = 0; i < kv_size(*tuple_vec); i++) {
 		packed_pos[i] = kv_at(*tuple_vec, i).p;
 	}
 
-	return((struct ref_kmer_table_s){
+	return((struct gref_kmer_table_s){
 		.kmer_table_size = kv_size(*tuple_vec),
 		.kmer_table = packed_pos
 	});
 }
 
 /**
- * @fn ref_build_kmer_table
+ * @fn gref_build_kmer_table
  */
 static _force_inline
-struct ref_kmer_table_s ref_build_kmer_table(
-	struct ref_prec_s *prec,
+struct gref_kmer_table_s gref_build_kmer_table(
+	struct gref_prec_s *prec,
 	uint32_t tail_id,
 	uint32_t *link_idx)
 {
@@ -699,30 +699,30 @@ struct ref_kmer_table_s ref_build_kmer_table(
 	debug("build kmer table");
 
 	/* pack kmer */
-	ref_pack_kmer(prec, tail_id, &v, link_idx);
+	gref_pack_kmer(prec, tail_id, &v, link_idx);
 
 	/* sort vector by kmer */
 	psort_half(
 		kv_ptr(v),
 		kv_size(v),
-		sizeof(struct ref_hash_tuple_s),
+		sizeof(struct gref_hash_tuple_s),
 		0);
 
 	/* build index of kmer table */
-	int64_t *kmer_idx_table = ref_build_kmer_idx_table(prec, &v);
+	int64_t *kmer_idx_table = gref_build_kmer_idx_table(prec, &v);
 
 	/* shrink kmer table */
-	struct ref_kmer_table_s t = ref_build_kmer_shrink_table(prec, &v);
+	struct gref_kmer_table_s t = gref_build_kmer_shrink_table(prec, &v);
 	t.kmer_idx_table = kmer_idx_table;
 	return(t);
 }
 
 /**
- * @fn ref_build_link_idx_table
+ * @fn gref_build_link_idx_table
  */
 static _force_inline
-void ref_build_link_idx_table(
-	struct ref_prec_s *prec,
+void gref_build_link_idx_table(
+	struct gref_prec_s *prec,
 	int64_t link_table_size,
 	int64_t link_idx_table_size)
 {
@@ -731,7 +731,7 @@ void ref_build_link_idx_table(
 	psort_half(
 		kv_ptr(prec->link),
 		kv_size(prec->link),
-		sizeof(struct ref_gid_pair_s),
+		sizeof(struct gref_gid_pair_s),
 		0);
 
 	debug("forward list");
@@ -745,8 +745,8 @@ void ref_build_link_idx_table(
 
 	/* store forward info */
 	uint32_t prev_gid = 0;
-	struct ref_section_intl_half_s *sec_half =
-		(struct ref_section_intl_half_s *)hmap_get_object(prec->hmap, 0);
+	struct gref_section_intl_half_s *sec_half =
+		(struct gref_section_intl_half_s *)hmap_get_object(prec->hmap, 0);
 	sec_half[prev_gid].link_idx_base = 0;
 	for(int64_t i = 0; i < link_table_size; i++) {
 		uint32_t gid = kv_at(prec->link, i).from;
@@ -771,15 +771,15 @@ void ref_build_link_idx_table(
 }
 
 /**
- * @fn ref_build_link_shrink_table
+ * @fn gref_build_link_shrink_table
  */
-struct ref_link_table_s {
+struct gref_link_table_s {
 	uint32_t *gid_arr;
 	int64_t size;
 };
 static _force_inline
-struct ref_link_table_s ref_build_link_shrink_table(
-	struct ref_prec_s *prec,
+struct gref_link_table_s gref_build_link_shrink_table(
+	struct gref_prec_s *prec,
 	int64_t link_table_size)
 {
 	/* pack */
@@ -792,18 +792,18 @@ struct ref_link_table_s ref_build_link_shrink_table(
 	}
 
 	kv_resize(prec->link, link_table_size);
-	return((struct ref_link_table_s){
+	return((struct gref_link_table_s){
 		.gid_arr = (uint32_t *)kv_ptr(prec->link),
 		.size = link_table_size
 	});
 }
 
 /**
- * @fn ref_build_link_table
+ * @fn gref_build_link_table
  */
 static _force_inline
-struct ref_link_table_s ref_build_link_table(
-	struct ref_prec_s *prec,
+struct gref_link_table_s gref_build_link_table(
+	struct gref_prec_s *prec,
 	uint32_t tail_id)
 {
 	/* build id -> index on link table mapping */
@@ -813,18 +813,18 @@ struct ref_link_table_s ref_build_link_table(
 		link_idx_table_size, link_table_size);
 
 	/* build link_idx_table */
-	ref_build_link_idx_table(prec, link_table_size, link_idx_table_size);
+	gref_build_link_idx_table(prec, link_table_size, link_idx_table_size);
 
 	/* shrink link_table */
-	return(ref_build_link_shrink_table(prec, link_table_size));
+	return(gref_build_link_shrink_table(prec, link_table_size));
 }
 
 /**
- * @fn ref_build_index_add_tail_sentinel
+ * @fn gref_build_index_add_tail_sentinel
  */
 static _force_inline
-uint32_t ref_build_index_add_tail_sentinel(
-	struct ref_prec_s *prec)
+uint32_t gref_build_index_add_tail_sentinel(
+	struct gref_prec_s *prec)
 {
 	char const *template = "tail_sentinel_";
 	int64_t len = strlen(template);
@@ -845,45 +845,45 @@ uint32_t ref_build_index_add_tail_sentinel(
 }
 
 /**
- * @fn ref_build_index
+ * @fn gref_build_index
  */
-ref_t *ref_build_index(
-	ref_prec_t *_prec)
+gref_t *gref_build_index(
+	gref_prec_t *_prec)
 {
-	struct ref_prec_s *prec = (struct ref_prec_s *)_prec;
+	struct gref_prec_s *prec = (struct gref_prec_s *)_prec;
 	if(prec == NULL) {
-		goto _ref_build_index_error_handler;
+		goto _gref_build_index_error_handler;
 	}
 
 	dump(kv_ptr(prec->seq), 28 / 2);
 
 	/* push tail sentinel */
-	uint32_t tail_id = ref_build_index_add_tail_sentinel(prec);
-	struct ref_section_intl_s *tail_sec =
-		(struct ref_section_intl_s *)hmap_get_object(prec->hmap, tail_id);
+	uint32_t tail_id = gref_build_index_add_tail_sentinel(prec);
+	struct gref_section_intl_s *tail_sec =
+		(struct gref_section_intl_s *)hmap_get_object(prec->hmap, tail_id);
 	tail_sec->base_id = tail_id;
-	tail_sec->sec = (struct ref_section_s){
+	tail_sec->sec = (struct gref_section_s){
 		.id = tail_id,
 		.len = 0,
 		.base = 0
 	};
 
 	/* build link array */
-	struct ref_link_table_s l = ref_build_link_table(prec, tail_id);
+	struct gref_link_table_s l = gref_build_link_table(prec, tail_id);
 	if(l.gid_arr == NULL) {
 		debug("gid_arr(%p)", l.gid_arr);
-		goto _ref_build_index_error_handler;
+		goto _gref_build_index_error_handler;
 	}
 
 	/* build kmer array */
-	struct ref_kmer_table_s k = ref_build_kmer_table(prec, tail_id, l.gid_arr);
+	struct gref_kmer_table_s k = gref_build_kmer_table(prec, tail_id, l.gid_arr);
 	if(k.kmer_idx_table == NULL || k.kmer_table == NULL) {
 		debug("kmer_idx_table(%p), kmer_table(%p)", k.kmer_idx_table, k.kmer_table);
-		goto _ref_build_index_error_handler;
+		goto _gref_build_index_error_handler;
 	}
 
 	/* cast prec to ref */
-	ref_t *ref = (ref_t *)prec;
+	gref_t *ref = (gref_t *)prec;
 
 	/* store misc */
 	ref->mask = (0x01<<(2 * prec->params.seed_length)) - 1;
@@ -899,7 +899,7 @@ ref_t *ref_build_index(
 	ref->kmer_table = k.kmer_table;
 	return(ref);
 
-_ref_build_index_error_handler:;
+_gref_build_index_error_handler:;
 	if(prec != NULL) {
 		hmap_clean(prec->hmap);
 		if(kv_ptr(prec->seq) != NULL) { kv_destroy(prec->seq); }
@@ -913,12 +913,12 @@ _ref_build_index_error_handler:;
 }
 
 /**
- * @fn ref_clean
+ * @fn gref_clean
  */
-void ref_clean(
-	ref_t *_ref)
+void gref_clean(
+	gref_t *_ref)
 {
-	struct ref_s *ref = (struct ref_s *)_ref;
+	struct gref_s *ref = (struct gref_s *)_ref;
 
 	if(ref != NULL) {
 		/* cleanup, cleanup... */
@@ -932,81 +932,81 @@ void ref_clean(
 }
 
 /**
- * @fn ref_dump_index
+ * @fn gref_dump_index
  */
-int ref_dump_index(
-	ref_t const *ref,
+int gref_dump_index(
+	gref_t const *ref,
 	zf_t *outfp)
 {
 	return(0);
 }
 
 /**
- * @fn ref_load_index
+ * @fn gref_load_index
  */
-ref_t *ref_load_index(
+gref_t *gref_load_index(
 	zf_t *infp)
 {
 	return(NULL);
 }
 
 /**
- * @fn ref_get_section
+ * @fn gref_get_section
  */
-struct ref_section_s const *ref_get_section(
-	ref_t const *_ref,
+struct gref_section_s const *gref_get_section(
+	gref_t const *_ref,
 	uint32_t id)
 {
-	struct ref_s *ref = (struct ref_s *)_ref;
+	struct gref_s *ref = (struct gref_s *)_ref;
 
-	struct ref_section_intl_s *sec =
-		(struct ref_section_intl_s *)hmap_get_object(ref->hmap, id);
-	return((struct ref_section_s const *)&sec->sec);
+	struct gref_section_intl_s *sec =
+		(struct gref_section_intl_s *)hmap_get_object(ref->hmap, id);
+	return((struct gref_section_s const *)&sec->sec);
 }
 
 /**
- * @fn ref_get_name
+ * @fn gref_get_name
  */
-struct ref_str_s ref_get_name(
-	ref_t const *_ref,
+struct gref_str_s gref_get_name(
+	gref_t const *_ref,
 	uint32_t id)
 {
-	struct ref_s *ref = (struct ref_s *)_ref;
+	struct gref_s *ref = (struct gref_s *)_ref;
 	struct hmap_key_s key = hmap_get_key(ref->hmap, id);
-	return((struct ref_str_s){
+	return((struct gref_str_s){
 		.str = key.str,
 		.len = key.len
 	});
 }
 
 /**
- * @fn ref_get_ptr
+ * @fn gref_get_ptr
  */
-uint8_t const *ref_get_ptr(
-	ref_t const *_ref)
+uint8_t const *gref_get_ptr(
+	gref_t const *_ref)
 {
-	struct ref_s const *ref = (struct ref_s const *)_ref;
+	struct gref_s const *ref = (struct gref_s const *)_ref;
 	return((uint8_t const *)kv_ptr(ref->seq));
 }
 
 /**
- * @fn ref_get_total_len
+ * @fn gref_get_total_len
  */
-int64_t ref_get_total_len(
-	ref_t const *_ref)
+int64_t gref_get_total_len(
+	gref_t const *_ref)
 {
-	struct ref_s const *ref = (struct ref_s const *)_ref;
+	struct gref_s const *ref = (struct gref_s const *)_ref;
 	return(ref->seq_len);
 }
 
 /**
- * @fn ref_match_2bitpacked
+ * @fn gref_match_2bitpacked
  */
-struct ref_match_res_s ref_match_2bitpacked(
-	ref_t const *_ref,
+struct gref_match_res_s gref_match_2bitpacked(
+	gref_t const *_ref,
 	uint64_t seq)
 {
-	struct ref_s const *ref = (struct ref_s const *)_ref;
+	struct gref_s const *ref = (struct gref_s const *)_ref;
 	seq &= ref->mask;
 	int64_t base = ref->kmer_idx_table[seq];
 	int64_t tail = ref->kmer_idx_table[seq + 1];
@@ -1014,33 +1014,33 @@ struct ref_match_res_s ref_match_2bitpacked(
 	debug("seq(%llx), mask(%llx), base(%lld), tail(%lld)",
 		seq, ref->mask, base, tail);
 	
-	struct ref_section_intl_s *sec =
-		(struct ref_section_intl_s *)hmap_get_object(ref->hmap, _decode_id(ref->kmer_table[base].gid));
+	struct gref_section_intl_s *sec =
+		(struct gref_section_intl_s *)hmap_get_object(ref->hmap, _decode_id(ref->kmer_table[base].gid));
 	debug("id(%u), base(%llu), len(%u)",
 		sec->sec.id, sec->sec.base, sec->sec.len);
-	return((struct ref_match_res_s){
+	return((struct gref_match_res_s){
 		.ptr = &ref->kmer_table[base],
 		.len = tail - base
 	});
 }
 
 /**
- * @fn ref_match
+ * @fn gref_match
  * @brief seq length must be equal to seed_length.
  */
-struct ref_match_res_s ref_match(
-	ref_t const *_ref,
+struct gref_match_res_s gref_match(
+	gref_t const *_ref,
 	char const *seq)
 {
-	struct ref_s const *ref = (struct ref_s const *)_ref;
+	struct gref_s const *ref = (struct gref_s const *)_ref;
 	int64_t const seed_len = ref->params.seed_length;
 	int64_t const shift_len = 2 * (seed_len - 1);
 
 	uint64_t packed_seq = 0;
 	for(int64_t i = 0; i < seed_len; i++) {
-		packed_seq = (packed_seq>>2) | (ref_encode_2bit(seq[i])<<shift_len);
+		packed_seq = (packed_seq>>2) | (gref_encode_2bit(seq[i])<<shift_len);
 	}
-	return(ref_match_2bitpacked((ref_t const *)ref, packed_seq));
+	return(gref_match_2bitpacked((gref_t const *)ref, packed_seq));
 }
 
 /**
@@ -1058,141 +1058,141 @@ unittest_config(
 /* make prec context */
 unittest()
 {
-	ref_prec_t *prec = ref_prec_init(REF_PARAMS(
+	gref_prec_t *prec = gref_prec_init(REF_PARAMS(
 		.seed_length = 3));
 
 	assert(prec != NULL);
 
-	ref_prec_clean(prec);
+	gref_prec_clean(prec);
 }
 
 /* add segment */
 unittest()
 {
-	ref_prec_t *prec = ref_prec_init(REF_PARAMS(.seed_length = 3));
+	gref_prec_t *prec = gref_prec_init(REF_PARAMS(.seed_length = 3));
 
-	int ret = ref_append_segment(prec, _str("sec0"), _str("AARA"));
+	int ret = gref_append_segment(prec, _str("sec0"), _str("AARA"));
 	assert(ret == 0, "ret(%d)", ret);
 
-	ret = ref_append_segment(prec, _str("sec1"), _str("MAAA"));
+	ret = gref_append_segment(prec, _str("sec1"), _str("MAAA"));
 	assert(ret == 0, "ret(%d)", ret);
 
-	ret = ref_append_link(prec, _str("sec0"), 0, _str("sec1"), 0);
+	ret = gref_append_link(prec, _str("sec0"), 0, _str("sec1"), 0);
 	assert(ret == 0, "ret(%d)", ret);
 
-	ret = ref_append_link(prec, _str("sec1"), 0, _str("sec2"), 0);
+	ret = gref_append_link(prec, _str("sec1"), 0, _str("sec2"), 0);
 	assert(ret == 0, "ret(%d)", ret);
 
-	ret = ref_append_segment(prec, _str("sec2"), _str("ACGT"));
+	ret = gref_append_segment(prec, _str("sec2"), _str("ACGT"));
 	assert(ret == 0, "ret(%d)", ret);
 
-	ret = ref_append_link(prec, _str("sec0"), 0, _str("sec2"), 0);
+	ret = gref_append_link(prec, _str("sec0"), 0, _str("sec2"), 0);
 	assert(ret == 0, "ret(%d)", ret);
 
-	ref_prec_clean(prec);
+	gref_prec_clean(prec);
 }
 
 /* build index */
 unittest()
 {
-	ref_prec_t *prec = ref_prec_init(REF_PARAMS(.seed_length = 3));
+	gref_prec_t *prec = gref_prec_init(REF_PARAMS(.seed_length = 3));
 
 	/* append */
-	ref_append_segment(prec, _str("sec0"), _str("GGRA"));
-	ref_append_segment(prec, _str("sec1"), _str("MGGG"));
-	ref_append_link(prec, _str("sec0"), 0, _str("sec1"), 0);
-	ref_append_link(prec, _str("sec1"), 0, _str("sec2"), 0);
-	ref_append_segment(prec, _str("sec2"), _str("ACVVGTGT"));
-	ref_append_link(prec, _str("sec0"), 0, _str("sec2"), 0);
+	gref_append_segment(prec, _str("sec0"), _str("GGRA"));
+	gref_append_segment(prec, _str("sec1"), _str("MGGG"));
+	gref_append_link(prec, _str("sec0"), 0, _str("sec1"), 0);
+	gref_append_link(prec, _str("sec1"), 0, _str("sec2"), 0);
+	gref_append_segment(prec, _str("sec2"), _str("ACVVGTGT"));
+	gref_append_link(prec, _str("sec0"), 0, _str("sec2"), 0);
 
 	/* build index */
-	ref_t *ref = ref_build_index(prec);
+	gref_t *ref = gref_build_index(prec);
 	assert(ref != NULL, "ref(%p)", ref);
 
 	/* pointer to seq */
-	uint8_t const *ptr = ref_get_ptr(ref);
+	uint8_t const *ptr = gref_get_ptr(ref);
 	assert(ptr != NULL, "ptr(%p)", ptr);
 
 	/* total len */
-	assert(ref_get_total_len(ref) == 16, "len(%lld)", ref_get_total_len(ref));
+	assert(gref_get_total_len(ref) == 16, "len(%lld)", gref_get_total_len(ref));
 
-	ref_clean(ref);
+	gref_clean(ref);
 }
 
 /* get_section */
 unittest()
 {
-	ref_prec_t *prec = ref_prec_init(REF_PARAMS(.seed_length = 3));
-	ref_append_segment(prec, _str("sec0"), _str("GGRA"));
-	ref_append_segment(prec, _str("sec1"), _str("MGGG"));
-	ref_append_link(prec, _str("sec0"), 0, _str("sec1"), 0);
-	ref_append_link(prec, _str("sec1"), 0, _str("sec2"), 0);
-	ref_append_segment(prec, _str("sec2"), _str("ACVVGTGT"));
-	ref_append_link(prec, _str("sec0"), 0, _str("sec2"), 0);
-	ref_t *ref = ref_build_index(prec);
+	gref_prec_t *prec = gref_prec_init(REF_PARAMS(.seed_length = 3));
+	gref_append_segment(prec, _str("sec0"), _str("GGRA"));
+	gref_append_segment(prec, _str("sec1"), _str("MGGG"));
+	gref_append_link(prec, _str("sec0"), 0, _str("sec1"), 0);
+	gref_append_link(prec, _str("sec1"), 0, _str("sec2"), 0);
+	gref_append_segment(prec, _str("sec2"), _str("ACVVGTGT"));
+	gref_append_link(prec, _str("sec0"), 0, _str("sec2"), 0);
+	gref_t *ref = gref_build_index(prec);
 
 	/* section id is given in ascending order from 0 */
-	assert(ref_get_section(ref, 0) != NULL, "%p", ref_get_section(ref, 0));
-	assert(ref_get_section(ref, 0)->id == 0, "id(%u)", ref_get_section(ref, 0)->id);
-	assert(ref_get_section(ref, 0)->len == 4, "len(%u)", ref_get_section(ref, 0)->len);
-	assert(ref_get_section(ref, 0)->base == 0, "base(%llu)", ref_get_section(ref, 0)->base);
+	assert(gref_get_section(ref, 0) != NULL, "%p", gref_get_section(ref, 0));
+	assert(gref_get_section(ref, 0)->id == 0, "id(%u)", gref_get_section(ref, 0)->id);
+	assert(gref_get_section(ref, 0)->len == 4, "len(%u)", gref_get_section(ref, 0)->len);
+	assert(gref_get_section(ref, 0)->base == 0, "base(%llu)", gref_get_section(ref, 0)->base);
 
 	/* section 1 */
-	assert(ref_get_section(ref, 1) != NULL, "%p", ref_get_section(ref, 1));
-	assert(ref_get_section(ref, 1)->id == 1, "id(%u)", ref_get_section(ref, 1)->id);
-	assert(ref_get_section(ref, 1)->len == 4, "len(%u)", ref_get_section(ref, 1)->len);
-	assert(ref_get_section(ref, 1)->base == 4, "base(%llu)", ref_get_section(ref, 1)->base);
+	assert(gref_get_section(ref, 1) != NULL, "%p", gref_get_section(ref, 1));
+	assert(gref_get_section(ref, 1)->id == 1, "id(%u)", gref_get_section(ref, 1)->id);
+	assert(gref_get_section(ref, 1)->len == 4, "len(%u)", gref_get_section(ref, 1)->len);
+	assert(gref_get_section(ref, 1)->base == 4, "base(%llu)", gref_get_section(ref, 1)->base);
 
 	/* section 2 */
-	assert(ref_get_section(ref, 2) != NULL, "%p", ref_get_section(ref, 2));
-	assert(ref_get_section(ref, 2)->id == 2, "id(%u)", ref_get_section(ref, 2)->id);
-	assert(ref_get_section(ref, 2)->len == 8, "len(%u)", ref_get_section(ref, 2)->len);
-	assert(ref_get_section(ref, 2)->base == 8, "base(%llu)", ref_get_section(ref, 2)->base);
+	assert(gref_get_section(ref, 2) != NULL, "%p", gref_get_section(ref, 2));
+	assert(gref_get_section(ref, 2)->id == 2, "id(%u)", gref_get_section(ref, 2)->id);
+	assert(gref_get_section(ref, 2)->len == 8, "len(%u)", gref_get_section(ref, 2)->len);
+	assert(gref_get_section(ref, 2)->base == 8, "base(%llu)", gref_get_section(ref, 2)->base);
 
-	ref_clean(ref);
+	gref_clean(ref);
 }
 
 /* get_name */
 unittest()
 {
-	ref_prec_t *prec = ref_prec_init(REF_PARAMS(.seed_length = 3));
-	ref_append_segment(prec, _str("sec0"), _str("GGRA"));
-	ref_append_segment(prec, _str("sec1"), _str("MGGG"));
-	ref_append_link(prec, _str("sec0"), 0, _str("sec1"), 0);
-	ref_append_link(prec, _str("sec1"), 0, _str("sec2"), 0);
-	ref_append_segment(prec, _str("sec2"), _str("ACVVGTGT"));
-	ref_append_link(prec, _str("sec0"), 0, _str("sec2"), 0);
-	ref_t *ref = ref_build_index(prec);
+	gref_prec_t *prec = gref_prec_init(REF_PARAMS(.seed_length = 3));
+	gref_append_segment(prec, _str("sec0"), _str("GGRA"));
+	gref_append_segment(prec, _str("sec1"), _str("MGGG"));
+	gref_append_link(prec, _str("sec0"), 0, _str("sec1"), 0);
+	gref_append_link(prec, _str("sec1"), 0, _str("sec2"), 0);
+	gref_append_segment(prec, _str("sec2"), _str("ACVVGTGT"));
+	gref_append_link(prec, _str("sec0"), 0, _str("sec2"), 0);
+	gref_t *ref = gref_build_index(prec);
 
 	/* section id is given in ascending order from 0 */
-	assert(ref_get_name(ref, 0).len == 4, "%d", ref_get_name(ref, 0).len);
-	assert(strcmp(ref_get_name(ref, 0).str, "sec0") == 0, "%s", ref_get_name(ref, 0).str);
+	assert(gref_get_name(ref, 0).len == 4, "%d", gref_get_name(ref, 0).len);
+	assert(strcmp(gref_get_name(ref, 0).str, "sec0") == 0, "%s", gref_get_name(ref, 0).str);
 
 	/* section 1 */
-	assert(ref_get_name(ref, 1).len == 4, "%d", ref_get_name(ref, 1).len);
-	assert(strcmp(ref_get_name(ref, 1).str, "sec1") == 0, "%s", ref_get_name(ref, 1).str);
+	assert(gref_get_name(ref, 1).len == 4, "%d", gref_get_name(ref, 1).len);
+	assert(strcmp(gref_get_name(ref, 1).str, "sec1") == 0, "%s", gref_get_name(ref, 1).str);
 
 	/* section 2 */
-	assert(ref_get_name(ref, 2).len == 4, "%d", ref_get_name(ref, 2).len);
-	assert(strcmp(ref_get_name(ref, 2).str, "sec2") == 0, "%s", ref_get_name(ref, 2).str);
+	assert(gref_get_name(ref, 2).len == 4, "%d", gref_get_name(ref, 2).len);
+	assert(strcmp(gref_get_name(ref, 2).str, "sec2") == 0, "%s", gref_get_name(ref, 2).str);
 
-	ref_clean(ref);
+	gref_clean(ref);
 }
 
 /* match */
 unittest()
 {
-	ref_prec_t *prec = ref_prec_init(REF_PARAMS(.seed_length = 3));
-	ref_append_segment(prec, _str("sec0"), _str("GGRA"));
-	ref_append_segment(prec, _str("sec1"), _str("MGGG"));
-	ref_append_link(prec, _str("sec0"), 0, _str("sec1"), 0);
-	ref_append_link(prec, _str("sec1"), 0, _str("sec2"), 0);
-	ref_append_segment(prec, _str("sec2"), _str("ACVVGTGT"));
-	ref_append_link(prec, _str("sec0"), 0, _str("sec2"), 0);
-	ref_t *ref = ref_build_index(prec);
+	gref_prec_t *prec = gref_prec_init(REF_PARAMS(.seed_length = 3));
+	gref_append_segment(prec, _str("sec0"), _str("GGRA"));
+	gref_append_segment(prec, _str("sec1"), _str("MGGG"));
+	gref_append_link(prec, _str("sec0"), 0, _str("sec1"), 0);
+	gref_append_link(prec, _str("sec1"), 0, _str("sec2"), 0);
+	gref_append_segment(prec, _str("sec2"), _str("ACVVGTGT"));
+	gref_append_link(prec, _str("sec0"), 0, _str("sec2"), 0);
+	gref_t *ref = gref_build_index(prec);
 
 	/* without ambiguous bases */
-	struct ref_match_res_s r = ref_match(ref, "GTG");
+	struct gref_match_res_s r = gref_match(ref, "GTG");
 	assert(r.ptr != NULL, "%p", r.ptr);
 	assert(r.len == 1, "%lld", r.len);
 
@@ -1200,14 +1200,14 @@ unittest()
 	assert(r.ptr[0].pos == 4, "%u", r.ptr[0].pos);
 
 	/* check section */
-	struct ref_section_s const *sec = ref_get_section(ref, ref_id(r.ptr[0].gid));
+	struct gref_section_s const *sec = gref_get_section(ref, gref_id(r.ptr[0].gid));
 	assert(sec->id == 2, "id(%u)", sec->id);
 	assert(sec->len == 8, "len(%u)", sec->len);
 	assert(sec->base == 8, "base(%llu)", sec->base);
 
 
 	/* with ambiguous bases */
-	r = ref_match(ref, "GGG");
+	r = gref_match(ref, "GGG");
 	assert(r.ptr != NULL, "%p", r.ptr);
 	assert(r.len == 2, "%lld", r.len);
 
@@ -1215,7 +1215,7 @@ unittest()
 	assert(r.ptr[0].pos == 0, "%u", r.ptr[0].pos);
 
 	/* check section */
-	sec = ref_get_section(ref, ref_id(r.ptr[0].gid));
+	sec = gref_get_section(ref, gref_id(r.ptr[0].gid));
 	assert(sec->id == 0, "id(%u)", sec->id);
 	assert(sec->len == 4, "len(%u)", sec->len);
 	assert(sec->base == 0, "base(%llu)", sec->base);
@@ -1224,7 +1224,7 @@ unittest()
 	assert(r.ptr[1].pos == 1, "%u", r.ptr[1].pos);
 
 	/* check section */
-	sec = ref_get_section(ref, ref_id(r.ptr[1].gid));
+	sec = gref_get_section(ref, gref_id(r.ptr[1].gid));
 	assert(sec->id == 1, "id(%u)", sec->id);
 	assert(sec->len == 4, "len(%u)", sec->len);
 	assert(sec->base == 4, "base(%llu)", sec->base);
@@ -1233,5 +1233,5 @@ unittest()
 #endif
 
 /**
- * end of ref.c
+ * end of gref.c
  */

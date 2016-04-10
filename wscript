@@ -22,13 +22,13 @@ def build(bld):
 	bld.recurse('zf')
 
 	bld.stlib(
-		source = ['ref.c'],
-		target = 'ref',
+		source = ['gref.c'],
+		target = 'gref',
 		lib = bld.env.LIB_PSORT + bld.env.LIB_HMAP + bld.env.LIB_ZF,
 		use = ['psort', 'hmap', 'zf'])
 
 	bld.program(
-		source = ['ref.c'],
+		source = ['gref.c'],
 		target = 'unittest',
 		lib = bld.env.LIB_PSORT + bld.env.LIB_HMAP + bld.env.LIB_ZF,
 		use = ['psort', 'hmap', 'zf'],
