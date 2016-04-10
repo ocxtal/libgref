@@ -67,25 +67,48 @@ typedef struct ref_params_s ref_params_t;
 #define REF_PARAMS(...)			( &((struct ref_params_s const) { __VA_ARGS__ }) )
 
 /**
- * @struct ref_pos_s
- * @brief sizeof(struct ref_pos_s) == 8
- */
-struct ref_pos_s {
-	int32_t id;
-	int32_t pos;
-};
-typedef struct ref_pos_s ref_pos_t;
-
-/**
  * @struct ref_section_s
  * @brief has equivalent fields to struct sea_section_s
  */
 struct ref_section_s {
-	int32_t id;
+	uint32_t id;
 	uint32_t len;
 	uint64_t base;
 };
 typedef struct ref_section_s ref_section_t;
+
+/**
+ * @struct ref_str_s
+ */
+struct ref_str_s {
+	char const *str;
+	int32_t len;
+};
+typedef struct ref_str_s ref_str_t;
+
+/**
+ * @struct ref_gid_pos_s
+ */
+struct ref_gid_pos_s {
+	uint32_t gid;
+	uint32_t pos;
+};
+typedef struct ref_gid_pos_s ref_gid_pos_t;
+
+/* encode and decode id */
+#define ref_rev(_gid)			( 0x01 ^ (_gid) )
+#define ref_gid(_id, _d)		( ((_id)<<1) | (0x01 & (_d)) )
+#define ref_id(_gid)			( (_gid)>>1 )
+#define ref_dir(_gid)			( (_gid) & 0x01 )
+
+/**
+ * @struct ref_match_res_s
+ */
+struct ref_match_res_s {
+	struct ref_gid_pos_s *ptr;
+	int64_t len;
+};
+typedef struct ref_match_res_s ref_match_res_t;
 
 /**
  * @fn ref_prec_init
@@ -154,25 +177,26 @@ int ref_dump_index(
 /**
  * @fn ref_match
  */
-struct ref_intv_s ref_match(
-	ref_t *ref,
-	void *seq);
-struct ref_intv_s ref_match_2bit8packed(
-	ref_t *ref,
+struct ref_match_res_s ref_match(
+	ref_t const *ref,
+	char const *seq);
+struct ref_match_res_s ref_match_2bitpacked(
+	ref_t const *ref,
 	uint64_t seq);
 
 /**
  * @fn ref_get_section
  */
 struct ref_section_s const *ref_get_section(
-	ref_t *ref,
-	int32_t id);
+	ref_t const *ref,
+	uint32_t id);
 
 /**
- * @fn ref_get_prefix
+ * @fn ref_get_name
  */
-char const *ref_get_prefix(
-	ref_t const *ref);
+struct ref_str_s ref_get_name(
+	ref_t const *ref,
+	uint32_t id);
 
 /**
  * @fn ref_get_ptr
@@ -187,34 +211,9 @@ int64_t ref_get_total_len(
 	ref_t const *ref);
 
 /**
- * @fn ref_get_ann
- *
- * @brief get annotation string at the given position.
- */
-char const *ref_get_ann_name(
-	ref_t const *ref,
-	int64_t pos);
-#if 0
-/**
- * @fn ref_get_bound
- *
- * @brief get bounds of the sequence
- */
-ref_interval_t ref_get_bound(
-	ref_t const *ref,
-	int64_t pos);
-#endif
-/**
  * @fn ref_is_amb
  */
 int64_t ref_is_amb(
-	ref_t const *ref,
-	int64_t lb, int64_t ub);
-
-/**
- * @fn ref_is_uniq
- */
-int64_t ref_is_uniq(
 	ref_t const *ref,
 	int64_t lb, int64_t ub);
 

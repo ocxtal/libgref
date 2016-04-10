@@ -39,6 +39,10 @@ int main() {
 */
 
 /*
+  
+  2016-0410
+    * add kv_pushm
+
   2016-0401
 
     * modify kv_init to return object
@@ -91,7 +95,7 @@ int main() {
 		if ((v1).m < (v0).n) kv_resize(v1, (v0).n);			\
 		(v1).n = (v0).n;									\
 		memcpy((v1).a, (v0).a, sizeof(*(v).a) * (v0).n);	\
-	} while (0)												\
+	} while (0)
 
 #define kv_push(v, x) do {									\
 		if ((v).n == (v).m) {								\
@@ -116,6 +120,17 @@ int main() {
 		} \
 		*((elem_t *)&((v).a[(v).n])) = (x); \
 		(v).n += size / sizeof(*(v).a); \
+	} while(0)
+
+#define kv_pushm(v, arr, size) do { \
+		if(sizeof(*(v).a) * ((v).m - (v).n) < (uint64_t)(size)) { \
+			(v).m = (v).m * 2;								\
+			(v).a = realloc((v).a, sizeof(*(v).a) * (v).m);	\
+		} \
+		for(uint64_t _i = 0; _i < (uint64_t)(size); _i++) { \
+			(v).a[(v).n + _i] = (arr)[_i]; \
+		} \
+		(v).n += (uint64_t)(size); \
 	} while(0)
 
 #define kv_a(v, i) ( \

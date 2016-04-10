@@ -6,6 +6,7 @@ def options(opt):
 
 def configure(conf):
 	conf.recurse('psort')
+	conf.recurse('hmap')
 	conf.recurse('zf')
 
 	conf.load('ar')
@@ -17,17 +18,18 @@ def configure(conf):
 
 def build(bld):
 	bld.recurse('psort')
+	bld.recurse('hmap')
 	bld.recurse('zf')
 
 	bld.stlib(
 		source = ['ref.c'],
 		target = 'ref',
-		lib = bld.env.LIB_ZF + bld.env.LIB_PSORT,
-		use = ['zf', 'psort'])
+		lib = bld.env.LIB_PSORT + bld.env.LIB_HMAP + bld.env.LIB_ZF,
+		use = ['psort', 'hmap', 'zf'])
 
 	bld.program(
 		source = ['ref.c'],
 		target = 'unittest',
-		lib = bld.env.LIB_ZF + bld.env.LIB_PSORT,
-		use = ['zf', 'psort'],
+		lib = bld.env.LIB_PSORT + bld.env.LIB_HMAP + bld.env.LIB_ZF,
+		use = ['psort', 'hmap', 'zf'],
 		defines = ['TEST'])
