@@ -1,0 +1,9 @@
+[submodule "hmap"]
+	path = hmap
+	url = git@github.com:ocxtal/libhmap.git
+[submodule "psort"]
+	path = psort
+	url = git@github.com:ocxtal/libpsort.git
+[submodule "zf"]
+	path = zf
+	url = git@github.com:ocxtal/libzf.git
