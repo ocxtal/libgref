@@ -1269,11 +1269,6 @@ struct gref_match_res_s gref_match_2bitpacked(
 
 	debug("seq(%llx), mask(%llx), base(%lld), tail(%lld)",
 		seq, gref->mask, base, tail);
-	
-	struct gref_section_intl_s *sec =
-		(struct gref_section_intl_s *)hmap_get_object(gref->hmap, _decode_id(gref->kmer_table[base].gid));
-	debug("id(%u), base(%llu), len(%u)",
-		sec->sec.id, sec->sec.base, sec->sec.len);
 	return((struct gref_match_res_s){
 		.ptr = &gref->kmer_table[base],
 		.len = tail - base
