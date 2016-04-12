@@ -5,7 +5,7 @@ Libgref provides k-mer hashing index on string graphs on nucleotide sequences. I
 ## Usage
 
 The gref object takes three states regarding to the mutabilty and search capability. The first `gref_pool_t` object, which is generated on init, is a mutable sequence pool. Any sequences, links between sequences, and SNPs can be added to the pool in any order. The sequences are identified with its name, represented in an array of `char` and its length. The pool object can be converted to a `gref_acv_t` archive object, which can enumerate all the k-mers in the graph. The `gref_idx_t` object, which is converted from the archive object, provides k-mer matching (searching) functionality. The k-mers are represented in an array of `char` or a 2-bit-encoded sequence packed (in little-endian) in unsigned 64-bit variable.
-``
+
 ```
 /* initialize seqeunce pool */
 gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
