@@ -550,14 +550,6 @@ int gref_build_link_idx_table(
 		return(-1);
 	}
 
-	#if 0
-	debug("forward list");
-	for(int64_t i = 0; i < kv_size(pool->link); i++) {
-		debug("(%u-%u, %u-%u)", _decode_id(kv_at(pool->link, i).from), _decode_dir(kv_at(pool->link, i).from),
-			_decode_id(kv_at(pool->link, i).to), _decode_dir(kv_at(pool->link, i).to));
-	}
-	#endif
-
 	/* init index */
 	uint32_t prev_gid = 0;
 	struct gref_section_half_s *sec_half =
@@ -719,7 +711,7 @@ struct gref_iter_stack_s {
 	uint8_t (*fetch)(struct gref_iter_stack_s *stack);
 	uint8_t const *seq_base;
 	uint32_t rem_len;
-	uint32_t pos_ofs;
+	uint32_t pos;
 
 	/* kmer table */
 	uint64_t cnt_arr;
@@ -776,6 +768,7 @@ struct gref_iter_stack_s *gref_iter_add_stack(
 	new_stack->shift_len = stack->shift_len;
 
 	/* copy buffer */
+	new_stack->pos = stack->pos;
 	new_stack->cnt_arr = stack->cnt_arr;
 	new_stack->kmer_idx = 0;
 	new_stack->kmer_occ = stack->kmer_occ;
@@ -904,14 +897,16 @@ static
 uint8_t gref_iter_foward_fetch(
 	struct gref_iter_stack_s *stack)
 {
-	debug("rem_len(%u), c(%x)", stack->rem_len - 1, stack->seq_base[-((int64_t)(stack->rem_len - 1))]);
+	debug("rem_len(%u), pos(%u), c(%x)", stack->rem_len - 1, stack->pos + 1, stack->seq_base[-((int64_t)(stack->rem_len - 1))]);
+	stack->pos++;
 	return(stack->seq_base[-((int64_t)(--stack->rem_len))]);
 }
 static
 uint8_t gref_iter_reverse_fetch(
 	struct gref_iter_stack_s *stack)
 {
-	debug("rem_len(%u), c(%x)", stack->rem_len - 1, stack->seq_base[-((int64_t)(stack->rem_len - 1))]);
+	debug("rem_len(%u), pos(%u), c(%x)", stack->rem_len - 1, stack->pos + 1, stack->seq_base[-((int64_t)(stack->rem_len - 1))]);
+	stack->pos++;
 	return(stack->seq_base[(int64_t)(--stack->rem_len)]);
 }
 
@@ -964,14 +959,13 @@ struct gref_iter_stack_s *gref_iter_fetch(
 			? gref_iter_foward_fetch
 			: gref_iter_reverse_fetch;
 		stack->rem_len = MIN2(stack->global_rem_len, iter->sec[_decode_id(gid)].sec.len);
-		stack->pos_ofs = stack->rem_len - 1;
 		stack->seq_base = gref_iter_calc_seq_base(iter, gid, stack->rem_len);
 
 		/* adjust global_rem_len */
 		stack->global_rem_len -= stack->rem_len;
 
-		debug("gid(%u), pos_ofs(%u), rem_len(%u), global_rem_len(%u)",
-			gid, stack->rem_len - 1, stack->rem_len, stack->global_rem_len);
+		debug("gid(%u), pos(%u), rem_len(%u), global_rem_len(%u)",
+			gid, stack->pos, stack->rem_len, stack->global_rem_len);
 
 		/* fetch seq */
 		gref_iter_append_base(stack, stack->fetch(stack));
@@ -1007,7 +1001,7 @@ struct gref_iter_stack_s *gref_iter_init_stack(
 	stack->fetch = gref_iter_foward_fetch;
 	stack->seq_base = gref_iter_calc_seq_base(iter, gid, len);
 	stack->rem_len = len;
-	stack->pos_ofs = len - 1;
+	stack->pos = 0;
 
 	/* init buffer and counter */
 	stack->cnt_arr = 0;
@@ -1018,20 +1012,6 @@ struct gref_iter_stack_s *gref_iter_init_stack(
 	for(int64_t i = 0; i < iter->seed_len; i++) {
 		stack = gref_iter_fetch(iter, stack);
 	}
-
-	#if 0
-	/* prefetch loop */
-	int64_t prefetch_len = MIN2(iter->seed_len, len);
-
-	debug("prefetch_len(%lld), seed_len(%u), len(%u)", prefetch_len, iter->seed_len, len);
-
-	for(int64_t i = 0; i < prefetch_len; i++) {
-		gref_iter_append_base(stack, stack->fetch(stack));
-	}
-	#endif
-
-	/* adjust global_rem_len */
-	// stack->global_rem_len += iter->seed_len - prefetch_len;
 	return(stack);
 }
 
@@ -1084,29 +1064,29 @@ struct gref_kmer_tuple_s gref_iter_next(
 	struct gref_iter_s *iter = (struct gref_iter_s *)_iter;
 	struct gref_iter_stack_s *stack = iter->stack;
 
-	#define return_kmer(_stack) { \
+	#define return_kmer(_iter, _stack) { \
 		debug("return kmer(%llx), gid(%u), pos(%u)", \
 			(_stack)->kmer[(_stack)->kmer_idx], \
 			(_stack)->sec_gid, \
-			(_stack)->pos_ofs - (_stack)->rem_len); \
+			(_stack)->pos); \
 		return((struct gref_kmer_tuple_s){ \
 			.kmer = (_stack)->kmer[(_stack)->kmer_idx++], \
 			.p = (struct gref_gid_pos_s){ \
-				.gid = (_stack)->sec_gid, \
-				.pos = (_stack)->pos_ofs - (_stack)->rem_len \
+				.gid = (_iter)->base_gid, \
+				.pos = (_stack)->pos - (_iter)->seed_len \
 			} \
 		}); \
 	}
 
 	debug("stack(%p), kmer_idx(%u), kmer_occ(%u)", stack, stack->kmer_idx, stack->kmer_occ);
 	if(stack->kmer_idx < stack->kmer_occ) {
-		return_kmer(stack);
+		return_kmer(iter, stack);
 	} else if((iter->stack = stack = gref_iter_fetch(iter, stack)) != NULL) {
-		return_kmer(stack);
+		return_kmer(iter, stack);
 	} else if((iter->base_gid += 2) < iter->tail_gid) {
 		debug("base_gid(%u), tail_gid(%u)", iter->base_gid, iter->tail_gid);
 		iter->stack = stack = gref_iter_init_stack(iter, iter->root_stack);
-		return_kmer(stack);
+		return_kmer(iter, stack);
 	}
 
 	#undef return_kmer
@@ -1141,67 +1121,16 @@ void gref_iter_clean(
 	return;
 }
 
-#if 0
+
 /* build kmer index (acv -> idx conversion) */
-/**
- * @fn gref_pack_kmer
- * @brief pack kmer, sec must be sorted by local id
- */
-static _force_inline
-void gref_pack_kmer(
-	struct gref_s *acv,
-	uint32_t tail_id,
-	kvec_kmer_tuple_t *tuple_vec,
-	uint32_t *link_idx)
-{
-	/* init buffer */
-	uint64_t size = (uint64_t)pow(3.0, acv->params.k * 0.5);
-	uint64_t *buf = (uint64_t *)malloc(MAX2(size, 1024));
-
-	debug("tail_id(%u)", tail_id);
-	for(int64_t i = 0; i < tail_id; i++) {
-		debug("pack_kmer id(%lld)", i);
-		gref_pack_kmer_sec(acv, tuple_vec, buf, link_idx, i);
-	}
-	free(buf);
-	return;
-}
-
-/**
- * @fn gref_pack_kmer_sec_push
- */
-static _force_inline
-void gref_pack_kmer_sec_push(
-	struct gref_s *acv,
-	struct gref_pack_kmer_work_s w,
-	uint64_t *buf,
-	kvec_kmer_tuple_t *tuple_vec,
-	uint32_t sec_id,
-	uint32_t pos)
-{
-	/* section-related consts */
-	uint32_t const fw_gid = _encode_id(sec_id, 0);
-	// uint32_t const rv_gid = _encode_id(sec_id, 1);
-
-	for(int64_t i = 0; i < w.curr; i++) {
-		/* push forward */
-		kv_push(*tuple_vec, ((struct gref_kmer_tuple_s){
-			.kmer = buf[i],
-			.p.gid = fw_gid,
-			.p.pos = pos
-		}));
-	}
-	return;
-}
-
-
 /**
  * @fn gref_build_kmer_idx_table
  */
 static _force_inline
 int64_t *gref_build_kmer_idx_table(
 	struct gref_s *acv,
-	kvec_kmer_tuple_t *tuple_vec)
+	struct gref_kmer_tuple_s *arr,
+	int64_t size)
 {
 	kvec_t(int64_t) kmer_idx;
 	kv_init(kmer_idx);
@@ -1211,10 +1140,10 @@ int64_t *gref_build_kmer_idx_table(
 
 	uint64_t prev_kmer = 0;
 	kv_push(kmer_idx, prev_kmer);
-	for(int64_t i = 0; i < kv_size(*tuple_vec); i++) {
-		uint64_t kmer = kv_at(*tuple_vec, i).kmer;
+	for(int64_t i = 0; i < size; i++) {
+		uint64_t kmer = arr[i].kmer;
 		debug("i(%lld), kmer(%llx), id(%u), pos(%u), prev_kmer(%llx)",
-			i, kmer, kv_at(*tuple_vec, i).p.gid, kv_at(*tuple_vec, i).p.pos, prev_kmer);
+			i, kmer, arr[i].p.gid, arr[i].p.pos, prev_kmer);
 
 		if(prev_kmer == kmer) { continue; }
 
@@ -1229,70 +1158,148 @@ int64_t *gref_build_kmer_idx_table(
 	}
 	for(uint64_t j = prev_kmer; j < kmer_idx_size; j++) {
 		debug("fill tail gaps j(%llx)", j);
-		kv_push(kmer_idx, kv_size(*tuple_vec));
+		kv_push(kmer_idx, size);
 	}
 	return(kv_ptr(kmer_idx));
 }
 
 /**
- * @fn gref_build_kmer_shrink_table
+ * @fn gref_shrink_kmer_table
  */
-struct gref_kmer_table_s {
-	int64_t *kmer_idx_table;
-	int64_t kmer_table_size;
-	struct gref_gid_pos_s *kmer_table;
-};
 static _force_inline
-struct gref_kmer_table_s gref_build_kmer_shrink_table(
+struct gref_gid_pos_s *gref_shrink_kmer_table(
 	struct gref_s *acv,
-	kvec_kmer_tuple_t *tuple_vec)
+	struct gref_kmer_tuple_s *kmer_table,
+	int64_t kmer_table_size)
 {
-	struct gref_gid_pos_s *packed_pos = (struct gref_gid_pos_s *)kv_ptr(*tuple_vec);
-	for(int64_t i = 0; i < kv_size(*tuple_vec); i++) {
-		packed_pos[i] = kv_at(*tuple_vec, i).p;
+	struct gref_gid_pos_s *packed_pos = (struct gref_gid_pos_s *)kmer_table;
+	
+	for(int64_t i = 0; i < kmer_table_size; i++) {
+		packed_pos[i] = kmer_table[i].p;
 	}
 
-	return((struct gref_kmer_table_s){
-		.kmer_table_size = kv_size(*tuple_vec),
-		.kmer_table = packed_pos
+	return(realloc(kmer_table, sizeof(struct gref_gid_pos_s) * kmer_table_size));
+}
+
+/**
+ * @fn gref_build_index
+ */
+gref_idx_t *gref_build_index(
+	gref_acv_t *acv)
+{
+	struct gref_s *gref = (struct gref_s *)acv;
+
+	/* enumerate kmers and pack into vector */
+	kvec_t(struct gref_kmer_tuple_s) v;
+	kv_init(v);
+
+	struct gref_iter_s *iter = gref_iter_init(acv);
+	struct gref_kmer_tuple_s t;
+	while((t = gref_iter_next(iter)).kmer != GREF_ITER_KMER_TERM) {
+		kv_push(v, t);
+	}
+	gref_iter_clean(iter);
+
+	/* sort kmers */
+	if(psort_half(kv_ptr(v), kv_size(v),
+		sizeof(struct gref_kmer_tuple_s), acv->params.num_threads) != 0) {
+		if(kv_ptr(v) != NULL) { kv_destroy(v); }
+		goto _gref_build_index_error_handler;
+	}
+
+	/* build index of kmer table */
+	gref->kmer_idx_table = gref_build_kmer_idx_table(acv, kv_ptr(v), kv_size(v));
+	if(gref->kmer_idx_table == NULL) {
+		goto _gref_build_index_error_handler;
+	}
+
+	/* shrink table */
+	gref->kmer_table_size = kv_size(v);
+	gref->kmer_table = gref_shrink_kmer_table(acv, kv_ptr(v), kv_size(v));
+	if(gref->kmer_table == NULL) {
+		goto _gref_build_index_error_handler;
+	}
+
+	/* store misc constants for kmer matching */
+	gref->mask = (0x01<<(2 * gref->params.k)) - 1;
+
+	/* change state */
+	gref->type = GREF_IDX;
+	return((gref_idx_t *)gref);
+
+_gref_build_index_error_handler:;
+	gref_clean((gref_t *)gref);
+	return(NULL);
+}
+
+/**
+ * @fn gref_disable_index
+ */
+gref_acv_t *gref_disable_index(
+	gref_idx_t *idx)
+{
+	struct gref_s *gref = (struct gref_s *)idx;
+
+	/* cleanup kmer table */
+	if(idx->kmer_idx_table != NULL) {
+		free(idx->kmer_idx_table);
+		idx->kmer_idx_table = NULL;
+	}
+	if(idx->kmer_table != NULL) {
+		idx->kmer_table = NULL;
+	}
+	idx->kmer_table_size = 0;
+
+	/* change state */
+	gref->type = GREF_ACV;
+	return((gref_acv_t *)gref);
+}
+
+/**
+ * @fn gref_match_2bitpacked
+ */
+struct gref_match_res_s gref_match_2bitpacked(
+	gref_idx_t const *_gref,
+	uint64_t seq)
+{
+	struct gref_s const *gref = (struct gref_s const *)_gref;
+	seq &= gref->mask;
+	int64_t base = gref->kmer_idx_table[seq];
+	int64_t tail = gref->kmer_idx_table[seq + 1];
+
+	debug("seq(%llx), mask(%llx), base(%lld), tail(%lld)",
+		seq, gref->mask, base, tail);
+	
+	struct gref_section_intl_s *sec =
+		(struct gref_section_intl_s *)hmap_get_object(gref->hmap, _decode_id(gref->kmer_table[base].gid));
+	debug("id(%u), base(%llu), len(%u)",
+		sec->sec.id, sec->sec.base, sec->sec.len);
+	return((struct gref_match_res_s){
+		.ptr = &gref->kmer_table[base],
+		.len = tail - base
 	});
 }
 
 /**
- * @fn gref_build_kmer_table
+ * @fn gref_match
+ * @brief seq length must be equal to k.
  */
-static _force_inline
-struct gref_kmer_table_s gref_build_kmer_table(
-	struct gref_s *acv,
-	uint32_t tail_id,
-	uint32_t *link_idx)
+struct gref_match_res_s gref_match(
+	gref_idx_t const *_gref,
+	uint8_t const *seq)
 {
-	/* init kmer tuple vector */
-	kvec_kmer_tuple_t v;
-	kv_init(v);
+	struct gref_s const *gref = (struct gref_s const *)_gref;
+	int64_t const seed_len = gref->params.k;
+	int64_t const shift_len = 2 * (seed_len - 1);
 
-	debug("build kmer table");
-
-	/* pack kmer */
-	gref_pack_kmer(acv, tail_id, &v, link_idx);
-
-	/* sort vector by kmer */
-	psort_half(
-		kv_ptr(v),
-		kv_size(v),
-		sizeof(struct gref_kmer_tuple_s),
-		0);
-
-	/* build index of kmer table */
-	int64_t *kmer_idx_table = gref_build_kmer_idx_table(acv, &v);
-
-	/* shrink kmer table */
-	struct gref_kmer_table_s t = gref_build_kmer_shrink_table(acv, &v);
-	t.kmer_idx_table = kmer_idx_table;
-	return(t);
+	uint64_t packed_seq = 0;
+	for(int64_t i = 0; i < seed_len; i++) {
+		packed_seq = (packed_seq>>2) | (gref_encode_2bit(seq[i])<<shift_len);
+	}
+	return(gref_match_2bitpacked((gref_t const *)gref, packed_seq));
 }
-#endif
 
+/* misc */
 #if 0
 /**
  * @fn gref_dump_index
@@ -1363,91 +1370,6 @@ int64_t gref_get_total_len(
 	return(kv_size(gref->seq));
 }
 
-#if 0
-/**
- * @fn gref_match_2bitpacked
- */
-struct gref_match_res_s gref_match_2bitpacked(
-	gref_idx_t const *_gref,
-	uint64_t seq)
-{
-	struct gref_s const *gref = (struct gref_s const *)_gref;
-	seq &= gref->mask;
-	int64_t base = gref->kmer_idx_table[seq];
-	int64_t tail = gref->kmer_idx_table[seq + 1];
-
-	debug("seq(%llx), mask(%llx), base(%lld), tail(%lld)",
-		seq, gref->mask, base, tail);
-	
-	struct gref_section_intl_s *sec =
-		(struct gref_section_intl_s *)hmap_get_object(gref->hmap, _decode_id(gref->kmer_table[base].gid));
-	debug("id(%u), base(%llu), len(%u)",
-		sec->sec.id, sec->sec.base, sec->sec.len);
-	return((struct gref_match_res_s){
-		.ptr = &gref->kmer_table[base],
-		.len = tail - base
-	});
-}
-
-/**
- * @fn gref_match
- * @brief seq length must be equal to k.
- */
-struct gref_match_res_s gref_match(
-	gref_idx_t const *_gref,
-	uint8_t const *seq)
-{
-	struct gref_s const *gref = (struct gref_s const *)_gref;
-	int64_t const seed_len = gref->params.k;
-	int64_t const shift_len = 2 * (seed_len - 1);
-
-	uint64_t packed_seq = 0;
-	for(int64_t i = 0; i < seed_len; i++) {
-		packed_seq = (packed_seq>>2) | (gref_encode_2bit(seq[i])<<shift_len);
-	}
-	return(gref_match_2bitpacked((gref_t const *)gref, packed_seq));
-}
-
-
-/**
- * @fn gref_build_index
- */
-gref_idx_t *gref_build_index(
-	gref_acv_t *acv)
-{
-	struct gref_s *gref = (struct gref_s *)acv;
-
-	/* build kmer array */
-	struct gref_kmer_table_s k = gref_build_kmer_table(gref, tail_id, l.link_table);
-	if(k.kmer_idx_table == NULL || k.kmer_table == NULL) {
-		debug("kmer_idx_table(%p), kmer_table(%p)", k.kmer_idx_table, k.kmer_table);
-		goto _gref_build_index_error_handler;
-	}
-
-	/* store misc */
-	ggref->mask = (0x01<<(2 * ggref->params.k)) - 1;
-	gref->seq_len = (64 * kv_size(gref->seq) - gref->seq_rem) / 4;
-
-	/* store link info */
-	gref->link_table = l.link_table;
-	gref->link_table_size = l.size;
-
-	/* store kmer info */
-	gref->kmer_idx_table = k.kmer_idx_table;
-	gref->kmer_table_size = k.kmer_table_size;
-	gref->kmer_table = k.kmer_table;
-	return((gref_idx_t *)gref);
-}
-
-/**
- * @fn gref_disable_index
- */
-gref_acv_t *gref_disable_index(
-	gref_idx_t *idx)
-{
-	return((gref_acv_t *)gref);
-}
-#endif
 
 /**
  * unittests
@@ -1623,7 +1545,6 @@ unittest()
 	gref_clean(acv);
 }
 
-#if 0
 /* build index */
 unittest()
 {
@@ -1741,7 +1662,7 @@ unittest()
 	/* with ambiguous bases */
 	r = gref_match(ref, (uint8_t const *)"GGG");
 	assert(r.ptr != NULL, "%p", r.ptr);
-	assert(r.len == 2, "%lld", r.len);
+	assert(r.len == 3, "%lld", r.len);
 
 	/* check pos */
 	assert(r.ptr[0].pos == 0, "%u", r.ptr[0].pos);
@@ -1760,8 +1681,17 @@ unittest()
 	assert(sec->id == 1, "id(%u)", sec->id);
 	assert(sec->len == 4, "len(%u)", sec->len);
 	assert(sec->base == 4, "base(%llu)", sec->base);
+
+	/* check pos */
+	assert(r.ptr[2].pos == 2, "%u", r.ptr[2].pos);
+
+	/* check section */
+	sec = gref_get_section(ref, gref_id(r.ptr[2].gid));
+	assert(sec->id == 2, "id(%u)", sec->id);
+	assert(sec->len == 8, "len(%u)", sec->len);
+	assert(sec->base == 8, "base(%llu)", sec->base);
 }
-#endif
+
 #endif
 
 /**
