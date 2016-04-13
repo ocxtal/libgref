@@ -29,6 +29,7 @@
 
 #include "unittest.h"
 
+/* inline directive */
 #define _force_inline				inline
 
 /* max, min */
@@ -1071,7 +1072,7 @@ struct gref_kmer_tuple_s gref_iter_next(
 			(_stack)->pos); \
 		return((struct gref_kmer_tuple_s){ \
 			.kmer = (_stack)->kmer[(_stack)->kmer_idx++], \
-			.p = (struct gref_gid_pos_s){ \
+			.pos = (struct gref_gid_pos_s){ \
 				.gid = (_iter)->base_gid, \
 				.pos = (_stack)->pos - (_iter)->seed_len \
 			} \
@@ -1095,7 +1096,7 @@ struct gref_kmer_tuple_s gref_iter_next(
 	/* reached the end */
 	return((struct gref_kmer_tuple_s){
 		.kmer = GREF_ITER_KMER_TERM,
-		.p = (struct gref_gid_pos_s){
+		.pos = (struct gref_gid_pos_s){
 			.gid = (uint32_t)-1,
 			.pos = 0
 		}
@@ -1143,7 +1144,7 @@ int64_t *gref_build_kmer_idx_table(
 	for(int64_t i = 0; i < size; i++) {
 		uint64_t kmer = arr[i].kmer;
 		debug("i(%lld), kmer(%llx), id(%u), pos(%u), prev_kmer(%llx)",
-			i, kmer, arr[i].p.gid, arr[i].p.pos, prev_kmer);
+			i, kmer, arr[i].pos.gid, arr[i].pos.pos, prev_kmer);
 
 		if(prev_kmer == kmer) { continue; }
 
@@ -1175,7 +1176,7 @@ struct gref_gid_pos_s *gref_shrink_kmer_table(
 	struct gref_gid_pos_s *packed_pos = (struct gref_gid_pos_s *)kmer_table;
 	
 	for(int64_t i = 0; i < kmer_table_size; i++) {
-		packed_pos[i] = kmer_table[i].p;
+		packed_pos[i] = kmer_table[i].pos;
 	}
 
 	return(realloc(kmer_table, sizeof(struct gref_gid_pos_s) * kmer_table_size));

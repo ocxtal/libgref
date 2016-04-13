@@ -141,7 +141,7 @@ typedef struct gref_gid_pos_s gref_gid_pos_t;
  */
 struct gref_kmer_tuple_s {
 	uint64_t kmer;
-	struct gref_gid_pos_s p;
+	struct gref_gid_pos_s pos;
 };
 typedef struct gref_kmer_tuple_s gref_kmer_tuple_t;
 
