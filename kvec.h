@@ -144,6 +144,47 @@ int main() {
 #define kv_at(v, i) ( (v).a[(i)] )
 #define kv_ptr(v)  ( (v).a )
 
+/** heap queue : elements in v must be orderd in heap */
+#define kv_hq_init(v)		{ kv_init(v); (void)kv_pushp(v); }
+#define kv_hq_destroy(v)	kv_destroy(v)
+#define kv_hq_size(v)		( kv_size(v) - 1 )
+#define kv_hq_max(v)		( kv_max(v) - 1 )
+#define kv_hq_clear(v)		{ kv_clear(v); }
+
+#define kv_hq_resize(v, s)	( kv_resize(v, (s) + 1) )
+#define kv_hq_reserve(v, s)	( kv_reserve(v, (s) + 1) )
+
+#define kv_hq_copy(v1, v0)	kv_copy(v1, v0)
+
+#define kv_hq_n(v, i) ( *((int64_t *)&v.a[i]) )
+#define kv_hq_push(v, x) { \
+	kv_push(v, x); \
+	uint64_t i = v.n - 1; \
+	while(i > 1 && (kv_hq_n(v, i>>1) > kv_hq_n(v, i))) { \
+		v.a[0] = v.a[i>>1]; \
+		v.a[i>>1] = v.a[i]; \
+		v.a[i] = v.a[0]; \
+		i >>= 1; \
+	} \
+}
+#define kv_hq_pop(v) ({ \
+	uint64_t i = 1, j = 2; \
+	v.a[0] = v.a[i]; \
+	v.a[i] = v.a[--v.n]; \
+	v.a[v.n] = v.a[0]; \
+	while(j < v.n) { \
+		uint64_t k; \
+		k = (j + 1 < v.n && kv_hq_n(v, j + 1) < kv_hq_n(v, j)) ? (j + 1) : j; \
+		k = (kv_hq_n(v, k) < kv_hq_n(v, i)) ? k : 0; \
+		if(k == 0) { break; } \
+		v.a[0] = v.a[k]; \
+		v.a[k] = v.a[i]; \
+		v.a[i] = v.a[0]; \
+		i = k; j = k<<1; \
+	} \
+	v.a[v.n]; \
+})
+
 /**
  * 2-bit packed vectors (kpv_*)
  * v.m must be multiple of kpv_elems(v).
