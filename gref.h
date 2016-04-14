@@ -56,14 +56,6 @@ enum gref_copy_mode {
 };
 
 /**
- * @enum gref_idx_mode
- */
-enum gref_idx_mode {
-	GREF_INDEX_HASH 			= 1,
-	GREF_INDEX_ITER				= 2
-};
-
-/**
  * @type gref_t
  */
 typedef struct gref_s gref_t;
@@ -99,8 +91,7 @@ struct gref_params_s {
 	uint32_t hash_size;
 	int8_t seq_format;
 	int8_t copy_mode;
-	int8_t index_mode;
-	int8_t reserved1;
+	int8_t reserved1[2];
 	int16_t num_threads;
 	uint16_t reserved2;
 };

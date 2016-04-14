@@ -290,11 +290,14 @@ struct gref_seq_interval_s gref_nocopy_seq_4bit(
 gref_pool_t *gref_init_pool(
 	gref_params_t const *params)
 {
-	/* check sanity of params */
-	if(params == NULL) {
-		return(NULL);
-	}
-	struct gref_params_s p = *params;
+	struct gref_params_s const default_params = {
+		.k = 14,
+		.hash_size = 256,
+		.seq_format = GREF_ASCII,
+		.copy_mode = GREF_COPY,
+		.num_threads = 0
+	};
+	struct gref_params_s p = (params == NULL) ? default_params : *params;
 
 	/* restore defaults */
 	#define restore(param, def)		{ (param) = ((uint64_t)(param) == 0) ? (def) : (param); }
@@ -303,7 +306,6 @@ gref_pool_t *gref_init_pool(
 	restore(p.hash_size, 1024);
 	restore(p.seq_format, GREF_ASCII);
 	restore(p.copy_mode, GREF_COPY);
-	restore(p.index_mode, GREF_INDEX_HASH);
 	restore(p.num_threads, 0);
 
 	#undef restore
@@ -312,7 +314,6 @@ gref_pool_t *gref_init_pool(
 	if((uint32_t)p.k > 32) { return(NULL); }
 	if((uint8_t)p.seq_format > GREF_4BIT) { return(NULL); }
 	if((uint8_t)p.copy_mode > GREF_NOCOPY) { return(NULL); }
-	if((uint8_t)p.index_mode > GREF_INDEX_ITER) { return(NULL); }
 
 	/* malloc mem */
 	struct gref_s *pool = (struct gref_s *)malloc(sizeof(struct gref_s));
