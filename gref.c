@@ -646,7 +646,9 @@ gref_acv_t *gref_freeze_pool(
 {
 	struct gref_s *gref = (struct gref_s *)pool;
 
-	if(gref == NULL) { return(NULL); }
+	if(gref == NULL || gref->type != GREF_POOL) {
+		goto _gref_freeze_pool_error_handler;
+	}
 
 	/* push tail sentinel */
 	gref_add_tail_section(gref);
@@ -654,19 +656,21 @@ gref_acv_t *gref_freeze_pool(
 	/* build link array */
 	if(gref_build_link_idx_table(gref) != 0) {
 		/* sort failed */
-		gref_clean((void *)gref);
-		return(NULL);
+		goto _gref_freeze_pool_error_handler;
 	}
 
 	/* shrink table */
 	if(gref_shrink_link_table(gref) != 0) {
-		gref_clean((void *)gref);
-		return(NULL);
+		goto _gref_freeze_pool_error_handler;
 	}
 
 	/* change type */
 	gref->type = GREF_ACV;
 	return((gref_acv_t *)gref);
+
+_gref_freeze_pool_error_handler:;
+	gref_clean((void *)gref);
+	return(NULL);
 }
 
 /**
@@ -677,17 +681,22 @@ gref_pool_t *gref_melt_archive(
 {
 	struct gref_s *gref = (struct gref_s *)acv;
 
-	if(gref == NULL) { return(NULL); }
+	if(gref == NULL || gref->type != GREF_ACV) {
+		goto _gref_melt_archive_error_handler;
+	}
 
 	/* expand table */
 	if(gref_expand_link_table(gref) != 0) {
-		gref_clean((void *)gref);
-		return(NULL);
+		goto _gref_melt_archive_error_handler;
 	}
 
 	/* change type */
 	gref->type = GREF_POOL;
 	return((gref_pool_t *)gref);
+
+_gref_melt_archive_error_handler:;
+	gref_clean((void *)gref);
+	return(NULL);
 }
 
 
@@ -1190,6 +1199,10 @@ gref_idx_t *gref_build_index(
 {
 	struct gref_s *gref = (struct gref_s *)acv;
 
+	if(gref == NULL || gref->type != GREF_ACV) {
+		goto _gref_build_index_error_handler;
+	}
+
 	/* enumerate kmers and pack into vector */
 	kvec_t(struct gref_kmer_tuple_s) v;
 	kv_init(v);
@@ -1240,6 +1253,11 @@ gref_acv_t *gref_disable_index(
 	gref_idx_t *idx)
 {
 	struct gref_s *gref = (struct gref_s *)idx;
+
+	if(gref == NULL || gref->type != GREF_IDX) {
+		gref_clean((gref_t *)gref);
+		return(NULL);
+	}
 
 	/* cleanup kmer table */
 	if(idx->kmer_idx_table != NULL) {
@@ -1316,6 +1334,16 @@ gref_t *gref_load_index(
 	return(NULL);
 }
 #endif
+
+/**
+ * @fn gref_get_section_cnt
+ */
+int64_t gref_get_section_cnt(
+	gref_t const *_gref)
+{
+	struct gref_s *gref = (struct gref_s *)_gref;
+	return((int64_t)gref->tail_id);
+}
 
 /**
  * @fn gref_get_section
@@ -1424,6 +1452,12 @@ unittest()
 	ret = gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
 	assert(ret == 0, "ret(%d)", ret);
 
+	/* section count */
+	assert(gref_get_section_cnt(pool) == 3, "%lld", gref_get_section_cnt(pool));
+
+	/* total len */
+	assert(gref_get_total_len(pool) == 12, "len(%lld)", gref_get_total_len(pool));
+
 	gref_clean(pool);
 }
 
@@ -1447,6 +1481,12 @@ unittest()
 	assert(acv->type == GREF_ACV, "%d", acv->type);
 	assert(acv->link_table != NULL, "%p", acv->link_table);
 
+	/* section count */
+	assert(gref_get_section_cnt(acv) == 3, "%lld", gref_get_section_cnt(acv));
+
+	/* total len */
+	assert(gref_get_total_len(acv) == 13, "len(%lld)", gref_get_total_len(acv));
+
 	gref_clean(acv);
 }
 
@@ -1469,73 +1509,84 @@ unittest()
 	assert(iter != NULL, "%p", iter);
 
 	/* enumerate */
-	#define _f(_i)		gref_iter_next(_i)
+	#define _f(_i)					gref_iter_next(_i)
+	#define _check_kmer(_t, _k, _id, _pos) ( \
+		   (_t).kmer == _pack(_k) \
+		&& (_t).pos.gid == _encode_id(_id, 0) \
+		&& (_t).pos.pos == (_pos) \
+	)
+	#define _print_kmer(_t) \
+		"kmer(%llx), sec(%u), pos(%u)", \
+		(_t).kmer, _decode_id((_t).pos.gid), (_t).pos.pos
+
 	struct gref_kmer_tuple_s t;
 
 	/* sec0 */
-	t = _f(iter); assert(t.kmer == _pack("GGA"), "%llx, %llx", t.kmer, _pack("GGA"));
-	t = _f(iter); assert(t.kmer == _pack("GGG"), "%llx, %llx", t.kmer, _pack("GGG"));
-	t = _f(iter); assert(t.kmer == _pack("GAA"), "%llx, %llx", t.kmer, _pack("GAA"));
-	t = _f(iter); assert(t.kmer == _pack("GGA"), "%llx, %llx", t.kmer, _pack("GGA"));
+	t = _f(iter); assert(_check_kmer(t, "GGA", 0, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGG", 0, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAA", 0, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGA", 0, 1), _print_kmer(t));
 	
 	/* sec0-sec1 */
-	t = _f(iter); assert(t.kmer == _pack("AAA"), "%llx, %llx", t.kmer, _pack("AAA"));
-	t = _f(iter); assert(t.kmer == _pack("GAA"), "%llx, %llx", t.kmer, _pack("GAA"));
-	t = _f(iter); assert(t.kmer == _pack("AAC"), "%llx, %llx", t.kmer, _pack("AAC"));
-	t = _f(iter); assert(t.kmer == _pack("GAC"), "%llx, %llx", t.kmer, _pack("GAC"));
+	t = _f(iter); assert(_check_kmer(t, "AAA", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAA", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AAC", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAC", 0, 2), _print_kmer(t));
 	
 	/* sec0-sec1-sec2 */
-	t = _f(iter); assert(t.kmer == _pack("AAA"), "%llx, %llx", t.kmer, _pack("AAA"));
-	t = _f(iter); assert(t.kmer == _pack("ACA"), "%llx, %llx", t.kmer, _pack("ACA"));
+	t = _f(iter); assert(_check_kmer(t, "AAA", 0, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACA", 0, 3), _print_kmer(t));
 
 	/* sec0-sec2 */
-	t = _f(iter); assert(t.kmer == _pack("AAA"), "%llx, %llx", t.kmer, _pack("AAA"));
-	t = _f(iter); assert(t.kmer == _pack("GAA"), "%llx, %llx", t.kmer, _pack("GAA"));
-	t = _f(iter); assert(t.kmer == _pack("AAC"), "%llx, %llx", t.kmer, _pack("AAC"));
+	t = _f(iter); assert(_check_kmer(t, "AAA", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAA", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AAC", 0, 3), _print_kmer(t));
 	
 	/* sec1-sec2 */
-	t = _f(iter); assert(t.kmer == _pack("AAC"), "%llx, %llx", t.kmer, _pack("AAC"));
-	t = _f(iter); assert(t.kmer == _pack("CAC"), "%llx, %llx", t.kmer, _pack("CAC"));
+	t = _f(iter); assert(_check_kmer(t, "AAC", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CAC", 1, 0), _print_kmer(t));
 
 	/* sec2 */
-	t = _f(iter); assert(t.kmer == _pack("ACA"), "%llx, %llx", t.kmer, _pack("ACA"));
-	t = _f(iter); assert(t.kmer == _pack("ACC"), "%llx, %llx", t.kmer, _pack("ACC"));
-	t = _f(iter); assert(t.kmer == _pack("ACG"), "%llx, %llx", t.kmer, _pack("ACG"));
+	t = _f(iter); assert(_check_kmer(t, "ACA", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACC", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACG", 2, 0), _print_kmer(t));
 
-	t = _f(iter); assert(t.kmer == _pack("CAA"), "%llx, %llx", t.kmer, _pack("CAA"));
-	t = _f(iter); assert(t.kmer == _pack("CCA"), "%llx, %llx", t.kmer, _pack("CCA"));
-	t = _f(iter); assert(t.kmer == _pack("CGA"), "%llx, %llx", t.kmer, _pack("CGA"));
+	t = _f(iter); assert(_check_kmer(t, "CAA", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCA", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGA", 2, 1), _print_kmer(t));
 	
-	t = _f(iter); assert(t.kmer == _pack("CAC"), "%llx, %llx", t.kmer, _pack("CAC"));
-	t = _f(iter); assert(t.kmer == _pack("CCC"), "%llx, %llx", t.kmer, _pack("CCC"));
-	t = _f(iter); assert(t.kmer == _pack("CGC"), "%llx, %llx", t.kmer, _pack("CGC"));
+	t = _f(iter); assert(_check_kmer(t, "CAC", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCC", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGC", 2, 1), _print_kmer(t));
 	
-	t = _f(iter); assert(t.kmer == _pack("CAG"), "%llx, %llx", t.kmer, _pack("CAG"));
-	t = _f(iter); assert(t.kmer == _pack("CCG"), "%llx, %llx", t.kmer, _pack("CCG"));
-	t = _f(iter); assert(t.kmer == _pack("CGG"), "%llx, %llx", t.kmer, _pack("CGG"));
+	t = _f(iter); assert(_check_kmer(t, "CAG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGG", 2, 1), _print_kmer(t));
 
-	t = _f(iter); assert(t.kmer == _pack("AAG"), "%llx, %llx", t.kmer, _pack("AAG"));
-	t = _f(iter); assert(t.kmer == _pack("CAG"), "%llx, %llx", t.kmer, _pack("CAG"));
-	t = _f(iter); assert(t.kmer == _pack("GAG"), "%llx, %llx", t.kmer, _pack("GAG"));
+	t = _f(iter); assert(_check_kmer(t, "AAG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CAG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAG", 2, 2), _print_kmer(t));
 	
-	t = _f(iter); assert(t.kmer == _pack("ACG"), "%llx, %llx", t.kmer, _pack("ACG"));
-	t = _f(iter); assert(t.kmer == _pack("CCG"), "%llx, %llx", t.kmer, _pack("CCG"));
-	t = _f(iter); assert(t.kmer == _pack("GCG"), "%llx, %llx", t.kmer, _pack("GCG"));
+	t = _f(iter); assert(_check_kmer(t, "ACG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GCG", 2, 2), _print_kmer(t));
 	
-	t = _f(iter); assert(t.kmer == _pack("AGG"), "%llx, %llx", t.kmer, _pack("AGG"));
-	t = _f(iter); assert(t.kmer == _pack("CGG"), "%llx, %llx", t.kmer, _pack("CGG"));
-	t = _f(iter); assert(t.kmer == _pack("GGG"), "%llx, %llx", t.kmer, _pack("GGG"));
+	t = _f(iter); assert(_check_kmer(t, "AGG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGG", 2, 2), _print_kmer(t));
 	
-	t = _f(iter); assert(t.kmer == _pack("AGT"), "%llx, %llx", t.kmer, _pack("AGT"));
-	t = _f(iter); assert(t.kmer == _pack("CGT"), "%llx, %llx", t.kmer, _pack("CGT"));
-	t = _f(iter); assert(t.kmer == _pack("GGT"), "%llx, %llx", t.kmer, _pack("GGT"));
+	t = _f(iter); assert(_check_kmer(t, "AGT", 2, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGT", 2, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGT", 2, 3), _print_kmer(t));
 
-	t = _f(iter); assert(t.kmer == _pack("GTG"), "%llx, %llx", t.kmer, _pack("GTG"));
-	t = _f(iter); assert(t.kmer == _pack("TGT"), "%llx, %llx", t.kmer, _pack("TGT"));
+	t = _f(iter); assert(_check_kmer(t, "GTG", 2, 4), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "TGT", 2, 5), _print_kmer(t));
 
 	t = _f(iter); assert(t.kmer == GREF_ITER_KMER_TERM, "%llx, %llx", t.kmer, GREF_ITER_KMER_TERM);
 
 	#undef _f
+	#undef _check_kmer
+	#undef _print_kmer
 
 	gref_iter_clean(iter);
 	gref_clean(acv);
@@ -1554,18 +1605,24 @@ unittest()
 	gref_append_segment(pool, _str("sec2"), _seq("ACVVGTGT"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
 
-	/* build index */
-	gref_t *ref = gref_build_index(pool);
-	assert(ref != NULL, "ref(%p)", ref);
+	/* build index */	
+	gref_acv_t *acv = gref_freeze_pool(pool);
+	assert(acv != NULL, "acv(%p)", acv);
+
+	gref_idx_t *idx = gref_build_index(pool);
+	assert(idx != NULL, "idx(%p)", idx);
 
 	/* pointer to seq */
-	uint8_t const *ptr = gref_get_ptr(ref);
+	uint8_t const *ptr = gref_get_ptr(idx);
 	assert(ptr != NULL, "ptr(%p)", ptr);
 
-	/* total len */
-	assert(gref_get_total_len(ref) == 16, "len(%lld)", gref_get_total_len(ref));
+	/* section count */
+	assert(gref_get_section_cnt(idx) == 3, "%lld", gref_get_section_cnt(idx));
 
-	gref_clean(ref);
+	/* total len */
+	assert(gref_get_total_len(idx) == 16, "len(%lld)", gref_get_total_len(idx));
+
+	gref_clean(idx);
 }
 
 /* get_section */
@@ -1578,27 +1635,28 @@ unittest()
 	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
 	gref_append_segment(pool, _str("sec2"), _seq("ACVVGTGT"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
-	gref_t *ref = gref_build_index(pool);
+	gref_acv_t *acv = gref_freeze_pool(pool);
+	gref_idx_t *idx = gref_build_index(pool);
 
 	/* section id is given in ascending order from 0 */
-	assert(gref_get_section(ref, 0) != NULL, "%p", gref_get_section(ref, 0));
-	assert(gref_get_section(ref, 0)->id == 0, "id(%u)", gref_get_section(ref, 0)->id);
-	assert(gref_get_section(ref, 0)->len == 4, "len(%u)", gref_get_section(ref, 0)->len);
-	assert(gref_get_section(ref, 0)->base == 0, "base(%llu)", gref_get_section(ref, 0)->base);
+	assert(gref_get_section(idx, 0) != NULL, "%p", gref_get_section(idx, 0));
+	assert(gref_get_section(idx, 0)->id == 0, "id(%u)", gref_get_section(idx, 0)->id);
+	assert(gref_get_section(idx, 0)->len == 4, "len(%u)", gref_get_section(idx, 0)->len);
+	assert(gref_get_section(idx, 0)->base == 0, "base(%llu)", gref_get_section(idx, 0)->base);
 
 	/* section 1 */
-	assert(gref_get_section(ref, 1) != NULL, "%p", gref_get_section(ref, 1));
-	assert(gref_get_section(ref, 1)->id == 1, "id(%u)", gref_get_section(ref, 1)->id);
-	assert(gref_get_section(ref, 1)->len == 4, "len(%u)", gref_get_section(ref, 1)->len);
-	assert(gref_get_section(ref, 1)->base == 4, "base(%llu)", gref_get_section(ref, 1)->base);
+	assert(gref_get_section(idx, 1) != NULL, "%p", gref_get_section(idx, 1));
+	assert(gref_get_section(idx, 1)->id == 1, "id(%u)", gref_get_section(idx, 1)->id);
+	assert(gref_get_section(idx, 1)->len == 4, "len(%u)", gref_get_section(idx, 1)->len);
+	assert(gref_get_section(idx, 1)->base == 4, "base(%llu)", gref_get_section(idx, 1)->base);
 
 	/* section 2 */
-	assert(gref_get_section(ref, 2) != NULL, "%p", gref_get_section(ref, 2));
-	assert(gref_get_section(ref, 2)->id == 2, "id(%u)", gref_get_section(ref, 2)->id);
-	assert(gref_get_section(ref, 2)->len == 8, "len(%u)", gref_get_section(ref, 2)->len);
-	assert(gref_get_section(ref, 2)->base == 8, "base(%llu)", gref_get_section(ref, 2)->base);
+	assert(gref_get_section(idx, 2) != NULL, "%p", gref_get_section(idx, 2));
+	assert(gref_get_section(idx, 2)->id == 2, "id(%u)", gref_get_section(idx, 2)->id);
+	assert(gref_get_section(idx, 2)->len == 8, "len(%u)", gref_get_section(idx, 2)->len);
+	assert(gref_get_section(idx, 2)->base == 8, "base(%llu)", gref_get_section(idx, 2)->base);
 
-	gref_clean(ref);
+	gref_clean(idx);
 }
 
 /* get_name */
@@ -1611,21 +1669,22 @@ unittest()
 	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
 	gref_append_segment(pool, _str("sec2"), _seq("ACVVGTGT"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
-	gref_t *ref = gref_build_index(pool);
+	gref_acv_t *acv = gref_freeze_pool(pool);
+	gref_idx_t *idx = gref_build_index(pool);
 
 	/* section id is given in ascending order from 0 */
-	assert(gref_get_name(ref, 0).len == 4, "%d", gref_get_name(ref, 0).len);
-	assert(strcmp(gref_get_name(ref, 0).str, "sec0") == 0, "%s", gref_get_name(ref, 0).str);
+	assert(gref_get_name(idx, 0).len == 4, "%d", gref_get_name(idx, 0).len);
+	assert(strcmp(gref_get_name(idx, 0).str, "sec0") == 0, "%s", gref_get_name(idx, 0).str);
 
 	/* section 1 */
-	assert(gref_get_name(ref, 1).len == 4, "%d", gref_get_name(ref, 1).len);
-	assert(strcmp(gref_get_name(ref, 1).str, "sec1") == 0, "%s", gref_get_name(ref, 1).str);
+	assert(gref_get_name(idx, 1).len == 4, "%d", gref_get_name(idx, 1).len);
+	assert(strcmp(gref_get_name(idx, 1).str, "sec1") == 0, "%s", gref_get_name(idx, 1).str);
 
 	/* section 2 */
-	assert(gref_get_name(ref, 2).len == 4, "%d", gref_get_name(ref, 2).len);
-	assert(strcmp(gref_get_name(ref, 2).str, "sec2") == 0, "%s", gref_get_name(ref, 2).str);
+	assert(gref_get_name(idx, 2).len == 4, "%d", gref_get_name(idx, 2).len);
+	assert(strcmp(gref_get_name(idx, 2).str, "sec2") == 0, "%s", gref_get_name(idx, 2).str);
 
-	gref_clean(ref);
+	gref_clean(idx);
 }
 
 /* match */
@@ -1638,10 +1697,11 @@ unittest()
 	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
 	gref_append_segment(pool, _str("sec2"), _seq("ACVVGTGT"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
-	gref_t *ref = gref_build_index(pool);
+	gref_acv_t *acv = gref_freeze_pool(pool);
+	gref_idx_t *idx = gref_build_index(pool);
 
 	/* without ambiguous bases */
-	struct gref_match_res_s r = gref_match(ref, (uint8_t const *)"GTG");
+	struct gref_match_res_s r = gref_match(idx, (uint8_t const *)"GTG");
 	assert(r.ptr != NULL, "%p", r.ptr);
 	assert(r.len == 1, "%lld", r.len);
 
@@ -1649,14 +1709,14 @@ unittest()
 	assert(r.ptr[0].pos == 4, "%u", r.ptr[0].pos);
 
 	/* check section */
-	struct gref_section_s const *sec = gref_get_section(ref, gref_id(r.ptr[0].gid));
+	struct gref_section_s const *sec = gref_get_section(idx, gref_id(r.ptr[0].gid));
 	assert(sec->id == 2, "id(%u)", sec->id);
 	assert(sec->len == 8, "len(%u)", sec->len);
 	assert(sec->base == 8, "base(%llu)", sec->base);
 
 
 	/* with ambiguous bases */
-	r = gref_match(ref, (uint8_t const *)"GGG");
+	r = gref_match(idx, (uint8_t const *)"GGG");
 	assert(r.ptr != NULL, "%p", r.ptr);
 	assert(r.len == 3, "%lld", r.len);
 
@@ -1664,7 +1724,7 @@ unittest()
 	assert(r.ptr[0].pos == 0, "%u", r.ptr[0].pos);
 
 	/* check section */
-	sec = gref_get_section(ref, gref_id(r.ptr[0].gid));
+	sec = gref_get_section(idx, gref_id(r.ptr[0].gid));
 	assert(sec->id == 0, "id(%u)", sec->id);
 	assert(sec->len == 4, "len(%u)", sec->len);
 	assert(sec->base == 0, "base(%llu)", sec->base);
@@ -1673,7 +1733,7 @@ unittest()
 	assert(r.ptr[1].pos == 1, "%u", r.ptr[1].pos);
 
 	/* check section */
-	sec = gref_get_section(ref, gref_id(r.ptr[1].gid));
+	sec = gref_get_section(idx, gref_id(r.ptr[1].gid));
 	assert(sec->id == 1, "id(%u)", sec->id);
 	assert(sec->len == 4, "len(%u)", sec->len);
 	assert(sec->base == 4, "base(%llu)", sec->base);
@@ -1682,10 +1742,12 @@ unittest()
 	assert(r.ptr[2].pos == 2, "%u", r.ptr[2].pos);
 
 	/* check section */
-	sec = gref_get_section(ref, gref_id(r.ptr[2].gid));
+	sec = gref_get_section(idx, gref_id(r.ptr[2].gid));
 	assert(sec->id == 2, "id(%u)", sec->id);
 	assert(sec->len == 8, "len(%u)", sec->len);
 	assert(sec->base == 8, "base(%llu)", sec->base);
+
+	gref_clean(idx);
 }
 
 #endif

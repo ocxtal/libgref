@@ -235,7 +235,7 @@ gref_idx_t *gref_load_index(
  * @fn gref_dump_index
  */
 int gref_dump_index(
-	gref_idx_t const *ref,
+	gref_idx_t const *gref,
 	zf_t *fp);
 #endif
 
@@ -245,7 +245,7 @@ int gref_dump_index(
  * @brief kmer iterator
  */
 gref_iter_t *gref_iter_init(
-	gref_idx_t *ref);
+	gref_idx_t *gref);
 
 /**
  * @fn gref_iter_next
@@ -266,46 +266,54 @@ void gref_iter_clean(
  * @brief index must be build with kmer-hash mode.
  */
 struct gref_match_res_s gref_match(
-	gref_idx_t const *ref,
+	gref_idx_t const *gref,
 	uint8_t const *seq);
 #if 0
 struct gref_match_res_s gref_match_2bitpacked(
-	gref_idx_t const *ref,
+	gref_idx_t const *gref,
 	uint64_t seq);
 #endif
+
+/**
+ * @fn gref_get_section_cnt
+ */
+int64_t gref_get_section_cnt(
+	gref_t const *gref);
 
 /**
  * @fn gref_get_section
  */
 struct gref_section_s const *gref_get_section(
-	gref_idx_t const *ref,
+	gref_t const *gref,
 	uint32_t id);
 
 /**
  * @fn gref_get_name
  */
 struct gref_idx_str_s gref_get_name(
-	gref_idx_t const *ref,
+	gref_t const *gref,
 	uint32_t id);
 
 /**
  * @fn gref_get_ptr
  */
 uint8_t const *gref_get_ptr(
-	gref_idx_t const *ref);
+	gref_t const *gref);
 
 /**
  * @fn gref_get_total_len
  */
 int64_t gref_get_total_len(
-	gref_idx_t const *ref);
+	gref_t const *gref);
 
+#if 0
 /**
  * @fn gref_is_amb
  */
 int64_t gref_is_amb(
-	gref_idx_t const *ref,
+	gref_t const *gref,
 	int64_t lb, int64_t ub);
+#endif
 
 #endif /** #ifndef _GREF_H_INCLUDED */
 /**
