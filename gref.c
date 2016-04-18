@@ -1290,7 +1290,7 @@ struct gref_match_res_s gref_match_2bitpacked(
 	debug("seq(%llx), mask(%llx), base(%lld), tail(%lld)",
 		seq, gref->mask, base, tail);
 	return((struct gref_match_res_s){
-		.ptr = &gref->kmer_table[base],
+		.gid_pos_arr = &gref->kmer_table[base],
 		.len = tail - base
 	});
 }
@@ -1361,15 +1361,32 @@ struct gref_section_s const *gref_get_section(
 }
 
 /**
+ * @fn gref_get_link
+ */
+struct gref_link_s gref_get_link(
+	gref_t const *_gref,
+	uint32_t gid)
+{
+	struct gref_s *gref = (struct gref_s *)_gref;
+
+	struct gref_section_half_s *base =
+		(struct gref_section_half_s *)hmap_get_object(gref->hmap, 0);
+	return((struct gref_link_s){
+		.gid_arr = &gref->link_table[base[gid].link_idx_base],
+		.len = base[gid + 1].link_idx_base - base[gid].link_idx_base
+	});
+}
+
+/**
  * @fn gref_get_name
  */
-struct gref_idx_str_s gref_get_name(
+struct gref_str_s gref_get_name(
 	gref_t const *_gref,
 	uint32_t gid)
 {
 	struct gref_s *gref = (struct gref_s *)_gref;
 	struct hmap_key_s key = hmap_get_key(gref->hmap, _decode_id(gid));
-	return((struct gref_idx_str_s){
+	return((struct gref_str_s){
 		.str = key.str,
 		.len = key.len
 	});
@@ -1645,17 +1662,75 @@ unittest()
 	assert(gref_get_section(idx, 0)->len == 4, "len(%u)", gref_get_section(idx, 0)->len);
 	assert(gref_get_section(idx, 0)->base == 0, "base(%llu)", gref_get_section(idx, 0)->base);
 
+	/* section 0 in reverse */
+	assert(gref_get_section(idx, 1) != NULL, "%p", gref_get_section(idx, 1));
+	assert(gref_get_section(idx, 1)->gid == 0, "gid(%u)", gref_get_section(idx, 1)->gid);
+	assert(gref_get_section(idx, 1)->len == 4, "len(%u)", gref_get_section(idx, 1)->len);
+	assert(gref_get_section(idx, 1)->base == 0, "base(%llu)", gref_get_section(idx, 1)->base);
+
 	/* section 1 */
 	assert(gref_get_section(idx, 2) != NULL, "%p", gref_get_section(idx, 2));
 	assert(gref_get_section(idx, 2)->gid == 2, "gid(%u)", gref_get_section(idx, 2)->gid);
 	assert(gref_get_section(idx, 2)->len == 4, "len(%u)", gref_get_section(idx, 2)->len);
 	assert(gref_get_section(idx, 2)->base == 4, "base(%llu)", gref_get_section(idx, 2)->base);
 
+	/* section 1 in reverse */
+	assert(gref_get_section(idx, 3) != NULL, "%p", gref_get_section(idx, 3));
+	assert(gref_get_section(idx, 3)->gid == 2, "gid(%u)", gref_get_section(idx, 3)->gid);
+	assert(gref_get_section(idx, 3)->len == 4, "len(%u)", gref_get_section(idx, 3)->len);
+	assert(gref_get_section(idx, 3)->base == 4, "base(%llu)", gref_get_section(idx, 3)->base);
+
 	/* section 2 */
 	assert(gref_get_section(idx, 4) != NULL, "%p", gref_get_section(idx, 4));
 	assert(gref_get_section(idx, 4)->gid == 4, "gid(%u)", gref_get_section(idx, 4)->gid);
 	assert(gref_get_section(idx, 4)->len == 8, "len(%u)", gref_get_section(idx, 4)->len);
 	assert(gref_get_section(idx, 4)->base == 8, "base(%llu)", gref_get_section(idx, 4)->base);
+
+	/* section 2 in reverse */
+	assert(gref_get_section(idx, 5) != NULL, "%p", gref_get_section(idx, 5));
+	assert(gref_get_section(idx, 5)->gid == 4, "gid(%u)", gref_get_section(idx, 5)->gid);
+	assert(gref_get_section(idx, 5)->len == 8, "len(%u)", gref_get_section(idx, 5)->len);
+	assert(gref_get_section(idx, 5)->base == 8, "base(%llu)", gref_get_section(idx, 5)->base);
+
+	gref_clean(idx);
+}
+
+/* get_link */
+unittest()
+{
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(.k = 3));
+	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
+	gref_append_segment(pool, _str("sec1"), _seq("MGGG"));
+	gref_append_link(pool, _str("sec0"), 0, _str("sec1"), 0);
+	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
+	gref_append_segment(pool, _str("sec2"), _seq("ACVVGTGT"));
+	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
+	gref_acv_t *acv = gref_freeze_pool(pool);
+	gref_idx_t *idx = gref_build_index(pool);
+
+	struct gref_link_s l = gref_get_link(idx, 0);
+	assert(l.len == 2, "len(%lld)", l.len);
+	assert(l.gid_arr[0] == 2, "%u", l.gid_arr[0]);
+	assert(l.gid_arr[1] == 4, "%u", l.gid_arr[1]);
+
+	l = gref_get_link(idx, 1);
+	assert(l.len == 0, "len(%lld)", l.len);
+
+	l = gref_get_link(idx, 2);
+	assert(l.len == 1, "len(%lld)", l.len);
+	assert(l.gid_arr[0] == 4, "%u", l.gid_arr[0]);
+
+	l = gref_get_link(idx, 3);
+	assert(l.len == 1, "len(%lld)", l.len);
+	assert(l.gid_arr[0] == 1, "%u", l.gid_arr[0]);
+
+	l = gref_get_link(idx, 4);
+	assert(l.len == 0, "len(%lld)", l.len);
+
+	l = gref_get_link(idx, 5);
+	assert(l.len == 2, "len(%lld)", l.len);
+	assert(l.gid_arr[0] == 3, "%u", l.gid_arr[0]);
+	assert(l.gid_arr[1] == 1, "%u", l.gid_arr[1]);
 
 	gref_clean(idx);
 }
@@ -1677,13 +1752,22 @@ unittest()
 	assert(gref_get_name(idx, 0).len == 4, "%d", gref_get_name(idx, 0).len);
 	assert(strcmp(gref_get_name(idx, 0).str, "sec0") == 0, "%s", gref_get_name(idx, 0).str);
 
+	assert(gref_get_name(idx, 1).len == 4, "%d", gref_get_name(idx, 1).len);
+	assert(strcmp(gref_get_name(idx, 1).str, "sec0") == 0, "%s", gref_get_name(idx, 1).str);
+
 	/* section 1 */
 	assert(gref_get_name(idx, 2).len == 4, "%d", gref_get_name(idx, 2).len);
 	assert(strcmp(gref_get_name(idx, 2).str, "sec1") == 0, "%s", gref_get_name(idx, 2).str);
 
+	assert(gref_get_name(idx, 3).len == 4, "%d", gref_get_name(idx, 3).len);
+	assert(strcmp(gref_get_name(idx, 3).str, "sec1") == 0, "%s", gref_get_name(idx, 3).str);
+
 	/* section 2 */
 	assert(gref_get_name(idx, 4).len == 4, "%d", gref_get_name(idx, 4).len);
 	assert(strcmp(gref_get_name(idx, 4).str, "sec2") == 0, "%s", gref_get_name(idx, 4).str);
+
+	assert(gref_get_name(idx, 5).len == 4, "%d", gref_get_name(idx, 5).len);
+	assert(strcmp(gref_get_name(idx, 5).str, "sec2") == 0, "%s", gref_get_name(idx, 5).str);
 
 	gref_clean(idx);
 }
@@ -1703,14 +1787,14 @@ unittest()
 
 	/* without ambiguous bases */
 	struct gref_match_res_s r = gref_match(idx, (uint8_t const *)"GTG");
-	assert(r.ptr != NULL, "%p", r.ptr);
+	assert(r.gid_pos_arr != NULL, "%p", r.gid_pos_arr);
 	assert(r.len == 1, "%lld", r.len);
 
 	/* check pos */
-	assert(r.ptr[0].pos == 4, "%u", r.ptr[0].pos);
+	assert(r.gid_pos_arr[0].pos == 4, "%u", r.gid_pos_arr[0].pos);
 
 	/* check section */
-	struct gref_section_s const *sec = gref_get_section(idx, r.ptr[0].gid);
+	struct gref_section_s const *sec = gref_get_section(idx, r.gid_pos_arr[0].gid);
 	assert(sec->gid == 4, "gid(%u)", sec->gid);
 	assert(sec->len == 8, "len(%u)", sec->len);
 	assert(sec->base == 8, "base(%llu)", sec->base);
@@ -1718,32 +1802,32 @@ unittest()
 
 	/* with ambiguous bases */
 	r = gref_match(idx, (uint8_t const *)"GGG");
-	assert(r.ptr != NULL, "%p", r.ptr);
+	assert(r.gid_pos_arr != NULL, "%p", r.gid_pos_arr);
 	assert(r.len == 3, "%lld", r.len);
 
 	/* check pos */
-	assert(r.ptr[0].pos == 0, "%u", r.ptr[0].pos);
+	assert(r.gid_pos_arr[0].pos == 0, "%u", r.gid_pos_arr[0].pos);
 
 	/* check section */
-	sec = gref_get_section(idx, r.ptr[0].gid);
+	sec = gref_get_section(idx, r.gid_pos_arr[0].gid);
 	assert(sec->gid == 0, "gid(%u)", sec->gid);
 	assert(sec->len == 4, "len(%u)", sec->len);
 	assert(sec->base == 0, "base(%llu)", sec->base);
 
 	/* check pos */
-	assert(r.ptr[1].pos == 1, "%u", r.ptr[1].pos);
+	assert(r.gid_pos_arr[1].pos == 1, "%u", r.gid_pos_arr[1].pos);
 
 	/* check section */
-	sec = gref_get_section(idx, r.ptr[1].gid);
+	sec = gref_get_section(idx, r.gid_pos_arr[1].gid);
 	assert(sec->gid == 2, "gid(%u)", sec->gid);
 	assert(sec->len == 4, "len(%u)", sec->len);
 	assert(sec->base == 4, "base(%llu)", sec->base);
 
 	/* check pos */
-	assert(r.ptr[2].pos == 2, "%u", r.ptr[2].pos);
+	assert(r.gid_pos_arr[2].pos == 2, "%u", r.gid_pos_arr[2].pos);
 
 	/* check section */
-	sec = gref_get_section(idx, r.ptr[2].gid);
+	sec = gref_get_section(idx, r.gid_pos_arr[2].gid);
 	assert(sec->gid == 4, "gid(%u)", sec->gid);
 	assert(sec->len == 8, "len(%u)", sec->len);
 	assert(sec->base == 8, "base(%llu)", sec->base);

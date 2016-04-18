@@ -107,16 +107,25 @@ struct gref_section_s {
 	uint32_t len;
 	uint64_t base;
 };
-typedef struct gref_section_s gref_idx_section_t;
+typedef struct gref_section_s gref_section_t;
 
 /**
- * @struct gref_idx_str_s
+ * @struct gref_link_s
  */
-struct gref_idx_str_s {
+struct gref_link_s {
+	uint32_t const *gid_arr;
+	int64_t len;
+};
+typedef struct gref_link_s gref_link_t;
+
+/**
+ * @struct gref_str_s
+ */
+struct gref_str_s {
 	char const *str;
 	int32_t len;
 };
-typedef struct gref_idx_str_s gref_idx_str_t;
+typedef struct gref_str_s gref_str_t;
 
 /**
  * @struct gref_gid_pos_s
@@ -146,7 +155,7 @@ typedef struct gref_kmer_tuple_s gref_kmer_tuple_t;
  * @struct gref_match_res_s
  */
 struct gref_match_res_s {
-	struct gref_gid_pos_s *ptr;
+	struct gref_gid_pos_s *gid_pos_arr;
 	int64_t len;
 };
 typedef struct gref_match_res_s gref_match_res_t;
@@ -279,9 +288,16 @@ struct gref_section_s const *gref_get_section(
 	uint32_t gid);
 
 /**
+ * @fn gref_get_link
+ */
+struct gref_link_s gref_get_link(
+	gref_t const *gref,
+	uint32_t gid);
+
+/**
  * @fn gref_get_name
  */
-struct gref_idx_str_s gref_get_name(
+struct gref_str_s gref_get_name(
 	gref_t const *gref,
 	uint32_t gid);
 
