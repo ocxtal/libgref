@@ -14,6 +14,8 @@ def configure(conf):
 
 	conf.load('ar')
 	conf.load('compiler_c')
+	conf.env.append_value('LIB_GREF',
+		conf.env.LIB_PSORT + conf.env.LIB_HMAP + conf.env.LIB_ZF)
 	conf.env.append_value('CFLAGS', '-O3')
 	conf.env.append_value('CFLAGS', '-std=c99')
 	conf.env.append_value('CFLAGS', '-march=native')
@@ -27,12 +29,12 @@ def build(bld):
 	bld.stlib(
 		source = ['gref.c'],
 		target = 'gref',
-		lib = bld.env.LIB_PSORT + bld.env.LIB_HMAP + bld.env.LIB_ZF,
+		lib = bld.env.LIB_GREF,
 		use = ['psort', 'hmap', 'zf'])
 
 	bld.program(
 		source = ['gref.c'],
 		target = 'unittest',
-		lib = bld.env.LIB_PSORT + bld.env.LIB_HMAP + bld.env.LIB_ZF,
+		lib = bld.env.LIB_GREF,
 		use = ['psort', 'hmap', 'zf'],
 		defines = ['TEST'])
