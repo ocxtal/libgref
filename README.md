@@ -181,22 +181,32 @@ struct gref_match_res_s gref_match_2bitpacked(
 
 #### gref\_get\_section
 
-Get section info by section id.
+Get section info by section gid.
 
 ```
 struct gref_section_s const *gref_get_section(
-	gref_idx_t const *ref,
-	uint32_t id);
+	gref_t const *ref,
+	uint32_t gid);
+```
+
+#### gref\_get\_link
+
+Get link by section gid.
+
+```
+struct gref_link_s gref_get_link(
+	gref_t const *ref,
+	uint32_t gid);
 ```
 
 #### gref\_get\_name
 
-Get section name by section id. 
+Get section name by section gid.
 
 ```
 struct gref_idx_str_s gref_get_name(
-	gref_idx_t const *ref,
-	uint32_t id);
+	gref_t const *ref,
+	uint32_t gid);
 ```
 
 #### gref\_get\_ptr
@@ -205,7 +215,7 @@ Returns a pointer to the sequence array.
 
 ```
 uint8_t const *gref_get_ptr(
-	gref_idx_t const *ref);
+	gref_t const *ref);
 ```
 
 #### gref\_get\_total\_len
@@ -214,7 +224,7 @@ Total sequence length in the object.
 
 ```
 int64_t gref_get_total_len(
-	gref_idx_t const *ref);
+	gref_t const *ref);
 ```
 
 ## License
