@@ -374,9 +374,9 @@ gref_pool_t *gref_init_pool(
 
 _gref_init_pool_error_handler:;
 	if(pool != NULL) {
-		hmap_clean(pool->hmap);
-		if(kv_ptr(pool->seq) != NULL) { kv_destroy(pool->seq); }
-		if(kv_ptr(pool->link) != NULL) { kv_destroy(pool->link); }
+		hmap_clean(pool->hmap); pool->hmap = NULL;
+		kv_destroy(pool->seq);
+		kv_destroy(pool->link);
 		free(pool);
 	}
 	return(NULL);
@@ -392,11 +392,11 @@ void gref_clean(
 
 	if(gref != NULL) {
 		/* cleanup, cleanup... */
-		hmap_clean(gref->hmap);
-		if(kv_ptr(gref->seq) != NULL) { kv_destroy(gref->seq); }
-		if(gref->link_table != NULL) { free(gref->link_table); }
-		if(gref->kmer_idx_table != NULL) { free(gref->kmer_idx_table); }
-		if(gref->kmer_table != NULL) { free(gref->kmer_table); }
+		hmap_clean(gref->hmap); gref->hmap = NULL;
+		kv_destroy(gref->seq);
+		free(gref->link_table); gref->link_table = NULL;
+		free(gref->kmer_idx_table); gref->kmer_idx_table = NULL;
+		free(gref->kmer_table); gref->kmer_table = NULL;
 	}
 	return;
 }
@@ -699,6 +699,10 @@ gref_pool_t *gref_melt_archive(
 	if(gref == NULL || gref->type != GREF_ACV) {
 		goto _gref_melt_archive_error_handler;
 	}
+
+	/* remove kmer table */
+	free(gref->kmer_table); gref->kmer_table = NULL;
+	gref->kmer_table_size = 0;
 
 	/* expand table */
 	if(gref_expand_link_table(gref) != 0) {
@@ -1139,7 +1143,7 @@ void gref_iter_clean(
 
 	if(stack != NULL) {
 		for(int64_t i = 0; i < GREF_ITER_INTL_MEM_ARR_LEN; i++) {
-			if(iter->mem_arr[i] != NULL) { free(iter->mem_arr[i]); }
+			free(iter->mem_arr[i]); iter->mem_arr[i] = NULL;
 		}
 		free((void *)iter);
 	}
@@ -1232,7 +1236,7 @@ gref_idx_t *gref_build_index(
 	/* sort kmers */
 	if(psort_half(kv_ptr(v), kv_size(v),
 		sizeof(struct gref_kmer_tuple_s), acv->params.num_threads) != 0) {
-		if(kv_ptr(v) != NULL) { kv_destroy(v); }
+		kv_destroy(v);
 		goto _gref_build_index_error_handler;
 	}
 
@@ -1274,15 +1278,8 @@ gref_acv_t *gref_disable_index(
 		return(NULL);
 	}
 
-	/* cleanup kmer table */
-	if(idx->kmer_idx_table != NULL) {
-		free(idx->kmer_idx_table);
-		idx->kmer_idx_table = NULL;
-	}
-	if(idx->kmer_table != NULL) {
-		idx->kmer_table = NULL;
-	}
-	idx->kmer_table_size = 0;
+	/* cleanup kmer_idx_table */
+	free(idx->kmer_idx_table); idx->kmer_idx_table = NULL;
 
 	/* change state */
 	gref->type = GREF_ACV;
