@@ -268,11 +268,9 @@ void gref_iter_clean(
 struct gref_match_res_s gref_match(
 	gref_idx_t const *gref,
 	uint8_t const *seq);
-#if 0
 struct gref_match_res_s gref_match_2bitpacked(
 	gref_idx_t const *gref,
 	uint64_t seq);
-#endif
 
 /**
  * @fn gref_get_section_cnt
