@@ -245,7 +245,7 @@ int gref_dump_index(
  * @brief kmer iterator
  */
 gref_iter_t *gref_iter_init(
-	gref_acv_t *gref);
+	gref_acv_t const *gref);
 
 /**
  * @fn gref_iter_next

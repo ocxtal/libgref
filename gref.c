@@ -1031,9 +1031,9 @@ struct gref_iter_stack_s *gref_iter_init_stack(
  * @fn gref_iter_init
  */
 gref_iter_t *gref_iter_init(
-	gref_acv_t *acv)
+	gref_acv_t const *acv)
 {
-	struct gref_s *gref = (struct gref_s *)acv;
+	struct gref_s const *gref = (struct gref_s const *)acv;
 
 	debug("init_stack_size(%lld)", gref->iter_init_stack_size);
 
