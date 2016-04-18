@@ -1082,7 +1082,7 @@ struct gref_kmer_tuple_s gref_iter_next(
 			(_stack)->pos); \
 		return((struct gref_kmer_tuple_s){ \
 			.kmer = (_stack)->kmer[(_stack)->kmer_idx++], \
-			.pos = (struct gref_gid_pos_s){ \
+			.gid_pos = (struct gref_gid_pos_s){ \
 				.gid = (_iter)->base_gid, \
 				.pos = (_stack)->pos - (_iter)->seed_len \
 			} \
@@ -1106,7 +1106,7 @@ struct gref_kmer_tuple_s gref_iter_next(
 	/* reached the end */
 	return((struct gref_kmer_tuple_s){
 		.kmer = GREF_ITER_KMER_TERM,
-		.pos = (struct gref_gid_pos_s){
+		.gid_pos = (struct gref_gid_pos_s){
 			.gid = (uint32_t)-1,
 			.pos = 0
 		}
@@ -1154,7 +1154,7 @@ int64_t *gref_build_kmer_idx_table(
 	for(int64_t i = 0; i < size; i++) {
 		uint64_t kmer = arr[i].kmer;
 		debug("i(%lld), kmer(%llx), id(%u), pos(%u), prev_kmer(%llx)",
-			i, kmer, arr[i].pos.gid, arr[i].pos.pos, prev_kmer);
+			i, kmer, arr[i].gid_pos.gid, arr[i].gid_pos.pos, prev_kmer);
 
 		if(prev_kmer == kmer) { continue; }
 
@@ -1186,7 +1186,7 @@ struct gref_gid_pos_s *gref_shrink_kmer_table(
 	struct gref_gid_pos_s *packed_pos = (struct gref_gid_pos_s *)kmer_table;
 	
 	for(int64_t i = 0; i < kmer_table_size; i++) {
-		packed_pos[i] = kmer_table[i].pos;
+		packed_pos[i] = kmer_table[i].gid_pos;
 	}
 
 	return(realloc(kmer_table, sizeof(struct gref_gid_pos_s) * kmer_table_size));
@@ -1530,12 +1530,12 @@ unittest()
 	#define _f(_i)					gref_iter_next(_i)
 	#define _check_kmer(_t, _k, _id, _pos) ( \
 		   (_t).kmer == _pack(_k) \
-		&& (_t).pos.gid == _encode_id(_id, 0) \
-		&& (_t).pos.pos == (_pos) \
+		&& (_t).gid_pos.gid == _encode_id(_id, 0) \
+		&& (_t).gid_pos.pos == (_pos) \
 	)
 	#define _print_kmer(_t) \
 		"kmer(%llx), sec(%u), pos(%u)", \
-		(_t).kmer, _decode_id((_t).pos.gid), (_t).pos.pos
+		(_t).kmer, _decode_id((_t).gid_pos.gid), (_t).gid_pos.pos
 
 	struct gref_kmer_tuple_s t;
 
