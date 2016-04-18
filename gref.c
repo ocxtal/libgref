@@ -1416,8 +1416,6 @@ int64_t gref_get_total_len(
 /**
  * unittests
  */
-#ifdef TEST
-
 unittest_config(
 	.name = "ref",
 	.depends_on = { "psort", "hmap" }
@@ -1834,8 +1832,6 @@ unittest()
 
 	gref_clean(idx);
 }
-
-#endif
 
 /**
  * end of gref.c
