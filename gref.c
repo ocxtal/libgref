@@ -32,6 +32,9 @@
 /* inline directive */
 #define _force_inline				inline
 
+/* roundup */
+#define _roundup(x, base)			( (((x) + (base) - 1) / (base)) * (base) )
+
 /* max, min */
 #define MAX2(x, y)					( (x) < (y) ? (y) : (x) )
 #define MAX3(x, y, z)				( MAX2(MAX2(x, y), z) )
@@ -136,6 +139,7 @@ struct gref_s {
 
 	/* sequence container */
 	kvec_t(uint8_t) seq;
+	int64_t seq_len;
 
 	/* link info container */
 	kvec_t(struct gref_gid_pair_s) link;
@@ -290,13 +294,7 @@ struct gref_seq_interval_s gref_nocopy_seq_4bit(
 gref_pool_t *gref_init_pool(
 	gref_params_t const *params)
 {
-	struct gref_params_s const default_params = {
-		.k = 14,
-		.hash_size = 256,
-		.seq_format = GREF_ASCII,
-		.copy_mode = GREF_COPY,
-		.num_threads = 0
-	};
+	struct gref_params_s const default_params = { 0 };
 	struct gref_params_s p = (params == NULL) ? default_params : *params;
 
 	/* restore defaults */
@@ -307,6 +305,8 @@ gref_pool_t *gref_init_pool(
 	restore(p.seq_format, GREF_ASCII);
 	restore(p.copy_mode, GREF_COPY);
 	restore(p.num_threads, 0);
+	restore(p.seq_head_margin, 0);
+	restore(p.seq_tail_margin, 0);
 
 	#undef restore
 
@@ -314,6 +314,8 @@ gref_pool_t *gref_init_pool(
 	if((uint32_t)p.k > 32) { return(NULL); }
 	if((uint8_t)p.seq_format > GREF_4BIT) { return(NULL); }
 	if((uint8_t)p.copy_mode > GREF_NOCOPY) { return(NULL); }
+	p.seq_head_margin = _roundup(p.seq_head_margin, 16);
+	p.seq_tail_margin = _roundup(p.seq_tail_margin, 16);
 
 	/* malloc mem */
 	struct gref_s *pool = (struct gref_s *)malloc(sizeof(struct gref_s));
@@ -336,9 +338,14 @@ gref_pool_t *gref_init_pool(
 	/* init seq vector */
 	if(p.copy_mode != GREF_NOCOPY) {
 		kv_init(pool->seq);
+
+		/* make margin at the head (leave uninitialized) */
+		kv_reserve(pool->seq, p.seq_head_margin);
+		kv_size(pool->seq) = p.seq_head_margin;
 	} else {
 		pool->seq.a = NULL;
 	}
+	pool->seq_len = 0;
 
 	/* init link vector */
 	kv_init(pool->link);
@@ -412,6 +419,9 @@ int gref_append_segment(
 	/* add sequence at the tail of the seq buffer */
 	struct gref_seq_interval_s iv = pool->append_seq(pool, seq, seq_len);
 
+	/* update length */
+	pool->seq_len += iv.tail - iv.base;
+
 	/* append the first section */
 	uint64_t const max_sec_len = 0x80000000;
 	uint64_t len = MIN2(iv.tail - iv.base, max_sec_len);
@@ -430,7 +440,7 @@ int gref_append_segment(
 	sec->sec = (struct gref_section_s){
 		.gid = _encode_id(id, 0),
 		.len = len,
-		.base = iv.base
+		.base = iv.base - pool->params.seq_head_margin
 	};
 	return(0);
 }
@@ -516,6 +526,10 @@ void gref_add_tail_section(
 		/* push sentinel to section array */
 		id = hmap_get_id(pool->hmap, buf, len);
 	} while(id != tail_id && len < 256);
+
+	/* make margin at the tail (leave uninitialized) */
+	kv_reserve(pool->seq, kv_size(pool->seq) + pool->params.seq_tail_margin);
+	kv_size(pool->seq) += pool->params.seq_tail_margin;
 
 	/* set info */
 	struct gref_section_intl_s *tail_sec =
@@ -1054,7 +1068,7 @@ gref_iter_t *gref_iter_init(
 	/* set params */
 	iter->seed_len = acv->params.k;
 	iter->shift_len = 2 * (acv->params.k - 1);
-	iter->seq = kv_ptr(acv->seq);
+	iter->seq = gref_get_ptr(acv);
 	iter->link_table = acv->link_table;
 	iter->sec = (struct gref_section_intl_s const *)hmap_get_object(acv->hmap, 0);
 
@@ -1399,7 +1413,7 @@ uint8_t const *gref_get_ptr(
 	gref_t const *_gref)
 {
 	struct gref_s const *gref = (struct gref_s const *)_gref;
-	return((uint8_t const *)kv_ptr(gref->seq));
+	return((uint8_t const *)kv_ptr(gref->seq) + gref->params.seq_head_margin);
 }
 
 /**
@@ -1409,7 +1423,8 @@ int64_t gref_get_total_len(
 	gref_t const *_gref)
 {
 	struct gref_s const *gref = (struct gref_s const *)_gref;
-	return(kv_size(gref->seq));
+	// return(kv_size(gref->seq));
+	return(gref->seq_len);
 }
 
 
@@ -1448,7 +1463,10 @@ unittest()
 /* add segment */
 unittest()
 {
-	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(.k = 3));
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
+		.k = 3,
+		.seq_head_margin = 32,
+		.seq_tail_margin = 32));
 
 	int ret = gref_append_segment(pool, _str("sec0"), _seq("AARA"));
 	assert(ret == 0, "ret(%d)", ret);
@@ -1480,7 +1498,10 @@ unittest()
 /* archive */
 unittest()
 {
-	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(.k = 3));
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
+		.k = 3,
+		.seq_head_margin = 32,
+		.seq_tail_margin = 32));
 
 	/* append */
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
@@ -1509,7 +1530,10 @@ unittest()
 /* seed iteration */
 unittest()
 {
-	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(.k = 3));
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
+		.k = 3,
+		.seq_head_margin = 32,
+		.seq_tail_margin = 32));
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
 	gref_append_segment(pool, _str("sec1"), _seq("M"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec1"), 0);
@@ -1611,7 +1635,10 @@ unittest()
 /* build index */
 unittest()
 {
-	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(.k = 3));
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
+		.k = 3,
+		.seq_head_margin = 32,
+		.seq_tail_margin = 32));
 
 	/* append */
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
@@ -1644,7 +1671,10 @@ unittest()
 /* get_section */
 unittest()
 {
-	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(.k = 3));
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
+		.k = 3,
+		.seq_head_margin = 32,
+		.seq_tail_margin = 32));
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
 	gref_append_segment(pool, _str("sec1"), _seq("MGGG"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec1"), 0);
@@ -1696,7 +1726,10 @@ unittest()
 /* get_link */
 unittest()
 {
-	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(.k = 3));
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
+		.k = 3,
+		.seq_head_margin = 32,
+		.seq_tail_margin = 32));
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
 	gref_append_segment(pool, _str("sec1"), _seq("MGGG"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec1"), 0);
@@ -1736,7 +1769,10 @@ unittest()
 /* get_name */
 unittest()
 {
-	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(.k = 3));
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
+		.k = 3,
+		.seq_head_margin = 32,
+		.seq_tail_margin = 32));
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
 	gref_append_segment(pool, _str("sec1"), _seq("MGGG"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec1"), 0);
@@ -1773,7 +1809,10 @@ unittest()
 /* match */
 unittest()
 {
-	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(.k = 3));
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
+		.k = 3,
+		.seq_head_margin = 32,
+		.seq_tail_margin = 32));
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
 	gref_append_segment(pool, _str("sec1"), _seq("MGGG"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec1"), 0);

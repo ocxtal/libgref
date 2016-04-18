@@ -91,9 +91,9 @@ struct gref_params_s {
 	uint32_t hash_size;
 	int8_t seq_format;
 	int8_t copy_mode;
-	int8_t reserved1[2];
-	int16_t num_threads;
-	uint16_t reserved2;
+	uint16_t num_threads;
+	uint16_t seq_head_margin;
+	uint16_t seq_tail_margin;
 };
 typedef struct gref_params_s gref_params_t;
 #define GREF_PARAMS(...)			( &((struct gref_params_s const) { __VA_ARGS__ }) )
