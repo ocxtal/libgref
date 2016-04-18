@@ -1417,8 +1417,8 @@ int64_t gref_get_total_len(
  * unittests
  */
 unittest_config(
-	.name = "ref",
-	.depends_on = { "psort", "hmap" }
+	.name = "gref",
+	.depends_on = { "psort", "hmap", "zf" }
 );
 
 #define _str(x)		x, strlen(x)

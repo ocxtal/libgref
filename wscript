@@ -36,6 +36,6 @@ def build(bld):
 		source = ['unittest.c'],
 		target = 'unittest',
 		linkflags = ['-all_load'],
-		use = ['psort', 'hmap', 'zf'],
+		use = ['gref'],
 		lib = bld.env.LIB_GREF,
 		defines = ['TEST'])
