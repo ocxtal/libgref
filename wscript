@@ -2,6 +2,9 @@
 # encoding: utf-8
 
 def options(opt):
+	opt.recurse('psort')
+	opt.recurse('hmap')
+	opt.recurse('zf')
 	opt.load('compiler_c')
 
 def configure(conf):
