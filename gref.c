@@ -77,7 +77,7 @@ struct gref_section_intl_s {
 	uint32_t fw_link_idx_base;
 
 	/* splitted section link (used to get original name) */
-	uint32_t base_id;
+	uint32_t base_gid;
 
 	/* gref_section_s compatible */
 	struct gref_section_s sec;
@@ -424,11 +424,11 @@ int gref_append_segment(
 	pool->tail_id = MAX2(pool->tail_id, id + 1);
 
 	/* store section info */
-	sec->base_id = id;
+	sec->base_gid = _encode_id(id, 0);
 	sec->fw_link_idx_base = 0;
 	sec->rv_link_idx_base = 0;
 	sec->sec = (struct gref_section_s){
-		.id = id,
+		.gid = _encode_id(id, 0),
 		.len = len,
 		.base = iv.base
 	};
@@ -520,9 +520,9 @@ void gref_add_tail_section(
 	/* set info */
 	struct gref_section_intl_s *tail_sec =
 		(struct gref_section_intl_s *)hmap_get_object(pool->hmap, tail_id);
-	tail_sec->base_id = tail_id;
+	tail_sec->base_gid = _encode_id(tail_id, 0);
 	tail_sec->sec = (struct gref_section_s){
-		.id = tail_id,
+		.gid = _encode_id(tail_id, 0),
 		.len = 0,
 		.base = 0
 	};
@@ -1323,7 +1323,7 @@ int gref_dump_index(
 	gref_t const *gref,
 	zf_t *outfp)
 {
-g	return(0);
+	return(0);
 }
 
 /**
@@ -1351,12 +1351,12 @@ int64_t gref_get_section_cnt(
  */
 struct gref_section_s const *gref_get_section(
 	gref_t const *_gref,
-	uint32_t id)
+	uint32_t gid)
 {
 	struct gref_s *gref = (struct gref_s *)_gref;
 
 	struct gref_section_intl_s *sec =
-		(struct gref_section_intl_s *)hmap_get_object(gref->hmap, id);
+		(struct gref_section_intl_s *)hmap_get_object(gref->hmap, _decode_id(gid));
 	return((struct gref_section_s const *)&sec->sec);
 }
 
@@ -1365,10 +1365,10 @@ struct gref_section_s const *gref_get_section(
  */
 struct gref_idx_str_s gref_get_name(
 	gref_t const *_gref,
-	uint32_t id)
+	uint32_t gid)
 {
 	struct gref_s *gref = (struct gref_s *)_gref;
-	struct hmap_key_s key = hmap_get_key(gref->hmap, id);
+	struct hmap_key_s key = hmap_get_key(gref->hmap, _decode_id(gid));
 	return((struct gref_idx_str_s){
 		.str = key.str,
 		.len = key.len
@@ -1641,21 +1641,21 @@ unittest()
 
 	/* section id is given in ascending order from 0 */
 	assert(gref_get_section(idx, 0) != NULL, "%p", gref_get_section(idx, 0));
-	assert(gref_get_section(idx, 0)->id == 0, "id(%u)", gref_get_section(idx, 0)->id);
+	assert(gref_get_section(idx, 0)->gid == 0, "gid(%u)", gref_get_section(idx, 0)->gid);
 	assert(gref_get_section(idx, 0)->len == 4, "len(%u)", gref_get_section(idx, 0)->len);
 	assert(gref_get_section(idx, 0)->base == 0, "base(%llu)", gref_get_section(idx, 0)->base);
 
 	/* section 1 */
-	assert(gref_get_section(idx, 1) != NULL, "%p", gref_get_section(idx, 1));
-	assert(gref_get_section(idx, 1)->id == 1, "id(%u)", gref_get_section(idx, 1)->id);
-	assert(gref_get_section(idx, 1)->len == 4, "len(%u)", gref_get_section(idx, 1)->len);
-	assert(gref_get_section(idx, 1)->base == 4, "base(%llu)", gref_get_section(idx, 1)->base);
+	assert(gref_get_section(idx, 2) != NULL, "%p", gref_get_section(idx, 2));
+	assert(gref_get_section(idx, 2)->gid == 2, "gid(%u)", gref_get_section(idx, 2)->gid);
+	assert(gref_get_section(idx, 2)->len == 4, "len(%u)", gref_get_section(idx, 2)->len);
+	assert(gref_get_section(idx, 2)->base == 4, "base(%llu)", gref_get_section(idx, 2)->base);
 
 	/* section 2 */
-	assert(gref_get_section(idx, 2) != NULL, "%p", gref_get_section(idx, 2));
-	assert(gref_get_section(idx, 2)->id == 2, "id(%u)", gref_get_section(idx, 2)->id);
-	assert(gref_get_section(idx, 2)->len == 8, "len(%u)", gref_get_section(idx, 2)->len);
-	assert(gref_get_section(idx, 2)->base == 8, "base(%llu)", gref_get_section(idx, 2)->base);
+	assert(gref_get_section(idx, 4) != NULL, "%p", gref_get_section(idx, 4));
+	assert(gref_get_section(idx, 4)->gid == 4, "gid(%u)", gref_get_section(idx, 4)->gid);
+	assert(gref_get_section(idx, 4)->len == 8, "len(%u)", gref_get_section(idx, 4)->len);
+	assert(gref_get_section(idx, 4)->base == 8, "base(%llu)", gref_get_section(idx, 4)->base);
 
 	gref_clean(idx);
 }
@@ -1678,12 +1678,12 @@ unittest()
 	assert(strcmp(gref_get_name(idx, 0).str, "sec0") == 0, "%s", gref_get_name(idx, 0).str);
 
 	/* section 1 */
-	assert(gref_get_name(idx, 1).len == 4, "%d", gref_get_name(idx, 1).len);
-	assert(strcmp(gref_get_name(idx, 1).str, "sec1") == 0, "%s", gref_get_name(idx, 1).str);
+	assert(gref_get_name(idx, 2).len == 4, "%d", gref_get_name(idx, 2).len);
+	assert(strcmp(gref_get_name(idx, 2).str, "sec1") == 0, "%s", gref_get_name(idx, 2).str);
 
 	/* section 2 */
-	assert(gref_get_name(idx, 2).len == 4, "%d", gref_get_name(idx, 2).len);
-	assert(strcmp(gref_get_name(idx, 2).str, "sec2") == 0, "%s", gref_get_name(idx, 2).str);
+	assert(gref_get_name(idx, 4).len == 4, "%d", gref_get_name(idx, 4).len);
+	assert(strcmp(gref_get_name(idx, 4).str, "sec2") == 0, "%s", gref_get_name(idx, 4).str);
 
 	gref_clean(idx);
 }
@@ -1710,8 +1710,8 @@ unittest()
 	assert(r.ptr[0].pos == 4, "%u", r.ptr[0].pos);
 
 	/* check section */
-	struct gref_section_s const *sec = gref_get_section(idx, gref_id(r.ptr[0].gid));
-	assert(sec->id == 2, "id(%u)", sec->id);
+	struct gref_section_s const *sec = gref_get_section(idx, r.ptr[0].gid);
+	assert(sec->gid == 4, "gid(%u)", sec->gid);
 	assert(sec->len == 8, "len(%u)", sec->len);
 	assert(sec->base == 8, "base(%llu)", sec->base);
 
@@ -1725,8 +1725,8 @@ unittest()
 	assert(r.ptr[0].pos == 0, "%u", r.ptr[0].pos);
 
 	/* check section */
-	sec = gref_get_section(idx, gref_id(r.ptr[0].gid));
-	assert(sec->id == 0, "id(%u)", sec->id);
+	sec = gref_get_section(idx, r.ptr[0].gid);
+	assert(sec->gid == 0, "gid(%u)", sec->gid);
 	assert(sec->len == 4, "len(%u)", sec->len);
 	assert(sec->base == 0, "base(%llu)", sec->base);
 
@@ -1734,8 +1734,8 @@ unittest()
 	assert(r.ptr[1].pos == 1, "%u", r.ptr[1].pos);
 
 	/* check section */
-	sec = gref_get_section(idx, gref_id(r.ptr[1].gid));
-	assert(sec->id == 1, "id(%u)", sec->id);
+	sec = gref_get_section(idx, r.ptr[1].gid);
+	assert(sec->gid == 2, "gid(%u)", sec->gid);
 	assert(sec->len == 4, "len(%u)", sec->len);
 	assert(sec->base == 4, "base(%llu)", sec->base);
 
@@ -1743,8 +1743,8 @@ unittest()
 	assert(r.ptr[2].pos == 2, "%u", r.ptr[2].pos);
 
 	/* check section */
-	sec = gref_get_section(idx, gref_id(r.ptr[2].gid));
-	assert(sec->id == 2, "id(%u)", sec->id);
+	sec = gref_get_section(idx, r.ptr[2].gid);
+	assert(sec->gid == 4, "gid(%u)", sec->gid);
 	assert(sec->len == 8, "len(%u)", sec->len);
 	assert(sec->base == 8, "base(%llu)", sec->base);
 

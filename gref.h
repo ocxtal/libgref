@@ -103,7 +103,7 @@ typedef struct gref_params_s gref_params_t;
  * @brief has equivalent fields to struct sea_section_s
  */
 struct gref_section_s {
-	uint32_t id;
+	uint32_t gid;
 	uint32_t len;
 	uint64_t base;
 };
@@ -276,14 +276,14 @@ int64_t gref_get_section_cnt(
  */
 struct gref_section_s const *gref_get_section(
 	gref_t const *gref,
-	uint32_t id);
+	uint32_t gid);
 
 /**
  * @fn gref_get_name
  */
 struct gref_idx_str_s gref_get_name(
 	gref_t const *gref,
-	uint32_t id);
+	uint32_t gid);
 
 /**
  * @fn gref_get_ptr
