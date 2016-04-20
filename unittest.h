@@ -1043,7 +1043,7 @@ void ut_print_results(
 
 		fprintf(stderr, "%sGroup %s: %" PRId64 " succeeded, %" PRId64 " failed in total %" PRId64 " assertions in %" PRId64 " tests.%s\n",
 			(result[j].fail == 0) ? UT_GREEN : UT_RED,
-			ut_null_replace(config[j].name, "(no name)"),
+			ut_null_replace(config[i].name, "(no name)"),
 			result[j].succ,
 			result[j].fail,
 			result[j].succ + result[j].fail,
