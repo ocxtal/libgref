@@ -26,6 +26,7 @@
 
 #include <alloca.h>
 #include <ctype.h>
+#include <getopt.h>
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -130,10 +131,15 @@ struct ut_config_s {
 	/* internal use */
 	char const *file;
 	int64_t unique_id;
+	uint64_t line;
+	int64_t exec;
 
 	/* dependency resolution */
 	char const *name;
 	char const *depends_on[16];
+
+	/* unused */
+	void *unused;
 
 	/* environment setup and cleanup */
 	void *(*init)(void *params);
@@ -151,16 +157,19 @@ struct ut_s {
 	char const *file;
 	int64_t unique_id;
 	uint64_t line;
+	int64_t exec;
+
+	/* dependency resolution */
+	char const *name;
+	char const *depends_on[16];
+
+	/* per-function config */
 	void (*fn)(
 		void *ctx,
 		void *gctx,
 		struct ut_s const *info,
 		struct ut_config_s const *config,
 		struct ut_result_s *result);
-
-	/* dependency resolution */
-	char const *name;
-	char const *depends_on[16];
 
 	/* environment setup and cleanup */
 	void *(*init)(void *params);
@@ -220,6 +229,7 @@ struct ut_s {
 #define unittest_config(...) \
 	static struct ut_config_s const ut_build_name(ut_config_, UNITTEST_UNIQUE_ID, __LINE__) = { \
 		.file = __FILE__, \
+		.line = __LINE__, \
 		.unique_id = UNITTEST_UNIQUE_ID, \
 		__VA_ARGS__ \
 	}; \
@@ -338,6 +348,26 @@ int ut_strcmp(
 		return(-1);
 	}
 	return(strcmp(a, b));
+}
+
+static inline
+int ut_strncmp(
+	char const *a,
+	char const *b,
+	uint64_t len)
+{
+	/* if both are NULL */
+	if(a == NULL && b == NULL) {
+		return(0);
+	}
+
+	if(b == NULL) {
+		return(1);
+	}
+	if(a == NULL) {
+		return(-1);
+	}
+	return(strncmp(a, b, len));
 }
 
 static inline
@@ -635,6 +665,8 @@ int ut_compare(
 	if((comp_res = (a->unique_id - b->unique_id)) != 0) {
 		return(sat(comp_res));
 	}
+
+	#undef sat
 
 	/* third sort by name */
 	if((comp_res = ut_strcmp(a->name, b->name)) != 0) {
@@ -1006,6 +1038,9 @@ void ut_print_results(
 	int64_t fail = 0;
 
 	for(int64_t i = 0; i < file_cnt; i++) {
+
+		if(config[i].exec == 0) { continue; }
+
 		fprintf(stderr, "%sGroup %s: %" PRId64 " succeeded, %" PRId64 " failed in total %" PRId64 " assertions in %" PRId64 " tests.%s\n",
 			(result[i].fail == 0) ? UT_GREEN : UT_RED,
 			ut_null_replace(config[i].name, "(no name)"),
@@ -1025,6 +1060,117 @@ void ut_print_results(
 		succ, fail, succ + fail, cnt,
 		UT_DEFAULT_COLOR);
 	return;
+}
+
+/**
+ * @fn ut_build_short_option_string
+ * @brief build short getopt string (i.e. "a:b:vVQ") from an array of struct option
+ */
+static inline
+char *ut_build_short_option_string(struct option const *opts)
+{
+	char *str = NULL, *ps;
+	int len = 0;
+	struct option const *po = NULL;
+
+	for(po = opts; po->name != NULL; po++) { len++; }
+	str = ps = (char *)malloc(2 * len);
+	for(po = opts; po->name != NULL; po++) {
+		*ps++ = (char)po->val;
+		if(po->has_arg != no_argument) {
+			*ps++ = ':';
+		}
+	}
+	*ps = '\0';
+	return(str);
+}
+
+/**
+ * @fn ut_modify_test_config_mark
+ */
+static inline
+int ut_modify_test_config_mark(
+	char const *arg,
+	void *_test,
+	int64_t cnt)
+{
+	struct ut_s *test = (struct ut_s *)_test;
+	char const *p = arg, *b = arg;
+	while(*p != '\0') {
+		/* parse with comma */
+		while(*p != '\0' && *p != ',') { p++; }
+
+		/* linear search among tests */
+		for(int64_t i = 0; i < cnt; i++) {
+			if(ut_strncmp(test[i].name, b, p - b) == 0) {
+				test[i].exec = 1;
+			}
+		}
+
+		if(*p == '\0') { break; }
+		b = ++p;
+	}
+	return(0);
+}
+
+/**
+ * @fn ut_modify_test_config_all
+ */
+static inline
+int ut_modify_test_config_all(
+	void *_test,
+	int64_t cnt)
+{
+	struct ut_s *test = (struct ut_s *)_test;
+	for(int64_t i = 0; i < cnt; i++) {
+		test[i].exec = 1;
+	}
+	return(0);
+}
+
+/**
+ * @fn ut_modify_test_config
+ */
+static inline
+int ut_modify_test_config(
+	int argc,
+	char *const argv[],
+	struct ut_s *sorted_test,
+	int64_t test_cnt,
+	struct ut_config_s *sorted_config,
+	int64_t file_cnt)
+{
+	struct option const opts_long[] = {
+		{ "group", required_argument, NULL, 'g' },
+		{ "test", required_argument, NULL, 't' },
+		{ NULL, 0, NULL, 0 }
+	};
+	char *opts_short = ut_build_short_option_string(opts_long);
+
+	int c, idx;
+	char const *group_arg = NULL, *test_arg = NULL;
+	while((c = getopt_long(argc, argv, opts_short, opts_long, &idx)) != -1) {
+		switch(c) {
+			case 'g': group_arg = optarg; break;
+			case 't': test_arg = optarg; break;
+			default: break;
+		}
+	}
+
+	if(group_arg != NULL) {
+		ut_modify_test_config_mark(group_arg, (void *)sorted_config, file_cnt);
+	} else {
+		ut_modify_test_config_all((void *)sorted_config, file_cnt);
+	}
+
+	if(test_arg != NULL) {
+		ut_modify_test_config_mark(test_arg, (void *)sorted_test, test_cnt);
+	} else {
+		ut_modify_test_config_all((void *)sorted_test, test_cnt);
+	}
+
+	free(opts_short);
+	return(0);
 }
 
 /**
@@ -1070,13 +1216,21 @@ int ut_main_impl(int argc, char *argv[])
 	/* rebuild file idx */
 	int64_t *sorted_file_idx = ut_build_file_index(test);
 
+	/* modify config */
+	ut_modify_test_config(argc, argv, test, test_cnt, compd_config, file_cnt);
+
 	/* run tests */
 	utkvec_t(struct ut_result_s) res;
 	utkv_init(res);
 	for(int64_t i = 0; i < file_cnt; i++) {
 		struct ut_result_s r = { 0 };
 
+		if(compd_config[i].exec == 0) { continue; }
+
 		for(int64_t j = sorted_file_idx[i]; j < sorted_file_idx[i + 1]; j++) {
+
+			if(test[j].exec == 0) { continue; }
+
 			r.cnt++;
 
 			/* initialize group context */
