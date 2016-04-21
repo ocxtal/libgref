@@ -37,6 +37,14 @@ enum gref_error {
 };
 
 /**
+ * @enum gref_revcomp
+ */
+enum gref_revcomp {
+	GREF_FW_ONLY				= 1,
+	GREF_FW_RV					= 2
+};
+
+/**
  * @enum gref_format
  */
 enum gref_format_flags {
@@ -87,11 +95,13 @@ typedef struct gref_iter_s gref_iter_t;
  * @struct gref_params_s
  */
 struct gref_params_s {
-	uint32_t k;						/* kmer length */
-	uint32_t hash_size;
-	int8_t seq_format;
-	int8_t copy_mode;
+	uint8_t k;						/* kmer length */
+	uint8_t seq_direction;
+	uint8_t seq_format;
+	uint8_t copy_mode;
 	uint16_t num_threads;
+	uint16_t reserved;
+	uint32_t hash_size;
 	uint16_t seq_head_margin;
 	uint16_t seq_tail_margin;
 };
