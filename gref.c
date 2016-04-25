@@ -14,6 +14,7 @@
 #include "hmap/hmap.h"
 #include "psort/psort.h"
 #include "zf/zf.h"
+#include "arch/arch.h"
 #include "gref.h"
 #include "kvec.h"
 #include "sassert.h"
@@ -52,6 +53,10 @@
  * structs and typedefs
  */
 typedef kvec_t(struct gref_kmer_tuple_s) kvec_kmer_tuple_t;
+
+
+/* the code supposes NULL == (void *)0 */
+_static_assert(NULL == (void *)0);
 
 /**
  * @struct gref_gid_pair_s
@@ -142,7 +147,8 @@ struct gref_s {
 
 	/* sequence container */
 	kvec_t(uint8_t) seq;
-	int64_t seq_len;
+	uint64_t seq_len;
+	uint8_t const *seq_lim;
 
 	/* link info container */
 	kvec_t(struct gref_gid_pair_s) link;
@@ -304,10 +310,11 @@ gref_pool_t *gref_init_pool(
 	#define restore(param, def)		{ (param) = ((uint64_t)(param) == 0) ? (def) : (param); }
 	
 	restore(p.k, 14);
-	restore(p.hash_size, 1024);
+	restore(p.seq_direction, GREF_FW_ONLY);
 	restore(p.seq_format, GREF_ASCII);
 	restore(p.copy_mode, GREF_COPY);
 	restore(p.num_threads, 0);
+	restore(p.hash_size, 1024);
 	restore(p.seq_head_margin, 0);
 	restore(p.seq_tail_margin, 0);
 
@@ -319,6 +326,11 @@ gref_pool_t *gref_init_pool(
 	if((uint8_t)p.copy_mode > GREF_NOCOPY) { return(NULL); }
 	p.seq_head_margin = _roundup(p.seq_head_margin, 16);
 	p.seq_tail_margin = _roundup(p.seq_tail_margin, 16);
+
+	debug("init called with seq_direction(%x), seq_format(%x), copy_mode(%x), "
+		"seq_head_margin(%x), seq_tail_margin(%x), num_threads(%x), hash_size(%x)",
+		p.seq_direction, p.seq_format, p.copy_mode,
+		p.seq_head_margin, p.seq_tail_margin, p.num_threads, p.hash_size);
 
 	/* malloc mem */
 	struct gref_s *pool = (struct gref_s *)malloc(sizeof(struct gref_s));
@@ -346,9 +358,14 @@ gref_pool_t *gref_init_pool(
 		kv_reserve(pool->seq, p.seq_head_margin);
 		kv_size(pool->seq) = p.seq_head_margin;
 	} else {
-		pool->seq.a = NULL;
+		kv_ptr(pool->seq) = NULL;
+
+		/* ignore margin option in nocopy mode */
+		p.seq_head_margin = 0;
+		p.seq_tail_margin = 0;
 	}
 	pool->seq_len = 0;
+	pool->seq_lim = NULL;
 
 	/* init link vector */
 	kv_init(pool->link);
@@ -360,7 +377,7 @@ gref_pool_t *gref_init_pool(
 		int64_t len) = {
 		[GREF_ASCII] = {
 			[GREF_COPY] = gref_copy_seq_ascii,
-			[GREF_4BIT] = NULL
+			[GREF_NOCOPY] = NULL		/* nocopy mode with ascii input is not supported */
 		},
 		[GREF_4BIT] = {
 			[GREF_COPY] = gref_copy_seq_4bit,
@@ -419,6 +436,9 @@ int gref_append_segment(
 	struct gref_s *pool = (struct gref_s *)_pool;
 	debug("append segment");
 
+	/* gref object is mutable only when type == POOL */
+	if(pool == NULL || pool->type != GREF_POOL) { return(-1); }
+
 	/* add sequence at the tail of the seq buffer */
 	struct gref_seq_interval_s iv = pool->append_seq(pool, seq, seq_len);
 
@@ -443,12 +463,12 @@ int gref_append_segment(
 	sec->fw_sec = (struct gref_section_s){
 		.gid = _encode_id(id, 0),
 		.len = len,
-		.base = iv.base - pool->params.seq_head_margin
+		.base = (void *)(iv.base - pool->params.seq_head_margin)
 	};
 	sec->rv_sec = (struct gref_section_s){
 		.gid = _encode_id(id, 1),
 		.len = len,
-		.base = 0
+		.base = NULL
 	};
 	return(0);
 }
@@ -467,6 +487,9 @@ int gref_append_link(
 {
 	struct gref_s *pool = (struct gref_s *)_pool;
 	debug("append link");
+
+	/* gref object is mutable only when type == POOL */
+	if(pool == NULL || pool->type != GREF_POOL) { return(-1); }
 
 	/* get ids */
 	uint32_t src_id = hmap_get_id(pool->hmap, src, src_len);
@@ -490,10 +513,29 @@ int gref_append_link(
 }
 
 /**
- * @fn gref_split_section
+ * @fn gref_append_snp
+ */
+int gref_append_snp(
+	gref_pool_t *_pool,
+	char const *name,
+	int32_t name_len,
+	int64_t pos,
+	uint8_t snp)
+{
+	struct gref_s *pool = (struct gref_s *)_pool;
+
+	/* gref object is mutable only when type == POOL */
+	if(pool == NULL || pool->type != GREF_POOL) { return(-1); }
+
+	/* fixme: not implemented yet */
+	return(0);
+}
+
+/**
+ * @fn gref_split_segment
  * @brief split base section and give new name (splitted) to the latter section.
  */
-int gref_split_section(
+int gref_split_segment(
 	gref_pool_t *_pool,
 	char const *base,
 	int32_t base_len,
@@ -501,7 +543,25 @@ int gref_split_section(
 	char const *splitted,
 	int32_t splitted_len)
 {
+	struct gref_s *pool = (struct gref_s *)_pool;
+
+	/* gref object is mutable only when type == POOL */
+	if(pool == NULL || pool->type != GREF_POOL) { return(-1); }
+
+	/* fixme: not implemented yet */
 	return(0);
+}
+
+/**
+ * @fn gref_merge_pools
+ * @brief merge two pools
+ */
+gref_pool_t *gref_merge_pools(
+	gref_pool_t *_pool1,
+	gref_pool_t *_pool2)
+{
+	/* not implemented yet */
+	return(NULL);
 }
 
 
@@ -611,58 +671,132 @@ int gref_build_link_idx_table(
 }
 
 /**
- * @fn gref_calc_rv_pos
+ * @fn gref_*_*_modify_seq
+ * @brief calculate pos and lim of reverse section, append rv seq if needed
  */
-static _force_inline
-void gref_calc_rv_pos(
+static
+int gref_fw_copy_modify_seq(
 	struct gref_s *pool)
 {
 	struct gref_section_intl_s *sec =
 		(struct gref_section_intl_s *)hmap_get_object(pool->hmap, 0);
-	int64_t lim = 2 * pool->seq_len;
 
+	debug("gref_fw_copy_modify_seq called");
+
+	/* lim == 0x800000000000 in fw_copy mode */
+	pool->seq_lim = GREF_SEQ_LIM;
+	uint8_t const *rv_lim = GREF_SEQ_LIM + (uint64_t)GREF_SEQ_LIM;
+
+	/* add offset to fw pos base, then calc rv pos base */
+	uint64_t seq_base = (uint64_t)kv_ptr(pool->seq) + pool->params.seq_head_margin;
 	for(int64_t i = 0; i < pool->sec_cnt; i++) {
-		sec[i].rv_sec.base = lim - sec[i].fw_sec.base - sec[i].fw_sec.len;
+		sec[i].fw_sec.base += seq_base;			/* convert pos to valid pointer */
+		sec[i].rv_sec.base = rv_lim - (uint64_t)sec[i].fw_sec.base - sec[i].fw_sec.len;
 	}
-	return;
+	return(0);
 }
-
-/**
- * @fn gref_append_rv_seq
- */
-static _force_inline
-int gref_append_rv_seq(
+static
+int gref_fw_nocopy_modify_seq(
 	struct gref_s *pool)
 {
-	if(pool->params.seq_direction == GREF_FW_ONLY) {
-		return(0);
+	struct gref_section_intl_s *sec =
+		(struct gref_section_intl_s *)hmap_get_object(pool->hmap, 0);
+
+	debug("gref_fw_nocopy_modify_seq called");
+
+	/* lim == 0x800000000000 in fw_copy mode */
+	pool->seq_lim = GREF_SEQ_LIM;
+	uint8_t const *rv_lim = GREF_SEQ_LIM + (uint64_t)GREF_SEQ_LIM;
+
+	/* calc rv pos base */
+	for(int64_t i = 0; i < pool->sec_cnt; i++) {
+		sec[i].rv_sec.base = rv_lim - (uint64_t)sec[i].fw_sec.base - sec[i].fw_sec.len;
+	}
+	return(0);
+}
+static
+int gref_fr_copy_modify_seq(
+	struct gref_s *pool)
+{
+	struct gref_section_intl_s *sec =
+		(struct gref_section_intl_s *)hmap_get_object(pool->hmap, 0);
+
+	debug("gref_fr_copy_modify_seq called");
+
+	/* append reverse sequence */
+	// uint64_t size = kv_size(pool->seq);
+	uint64_t size = 2 * pool->seq_len
+		+ pool->params.seq_head_margin
+		+ pool->params.seq_tail_margin;
+	kv_reserve(pool->seq, size);
+	if(kv_ptr(pool->seq) == NULL) { return(-1); }
+
+	/* append revcomp seq */
+	uint8_t const comp[16] = {
+		0x00, 0x08, 0x04, 0x0c, 0x02, 0x0a, 0x06, 0x0e,
+		0x01, 0x09, 0x05, 0x0d, 0x03, 0x0b, 0x07, 0x0f
+	};
+	uint64_t fw_tail_pos = pool->seq_len + pool->params.seq_head_margin;
+	for(int64_t i = 0; i < pool->seq_len; i++) {
+		kv_at(pool->seq, fw_tail_pos + i) = comp[kv_at(pool->seq, fw_tail_pos - 1 - i)];
 	}
 
-	uint64_t size = kv_size(pool->seq);
-	kv_reserve(pool->seq, 2 * size);
-	if(kv_ptr(pool->seq) == NULL) {
-		return(-1);
-	}
+	/* lim == 0x800000000000 in fw_copy mode */
+	uint8_t const *seq_base = kv_ptr(pool->seq) + pool->params.seq_head_margin;
+	uint8_t const *rv_lim = pool->seq_lim = seq_base + 2 * pool->seq_len;
 
-	for(int64_t i = 0; i < size; i++) {
-		kv_at(pool->seq, size + i) = kv_at(pool->seq, size - 1 - i);
+	/* add offset to fw pos base, then calc rv pos base */
+	for(int64_t i = 0; i < pool->sec_cnt; i++) {
+		sec[i].rv_sec.base = rv_lim - (uint64_t)sec[i].fw_sec.base - sec[i].fw_sec.len;
+		sec[i].fw_sec.base += (uint64_t)seq_base;	/* convert pos to valid pointer */
+		debug("%llu", sec[i].rv_sec.base - sec[i].fw_sec.base);
+	}
+	return(0);
+}
+static
+int gref_fr_nocopy_modify_seq(
+	struct gref_s *pool)
+{
+	struct gref_section_intl_s *sec =
+		(struct gref_section_intl_s *)hmap_get_object(pool->hmap, 0);
+
+	debug("gref_fr_nocopy_modify_seq called");
+
+	/* lim == 0x800000000000 in fw_copy mode */
+	pool->seq_lim = GREF_SEQ_LIM;
+
+	/* calc rv pos base */
+	for(int64_t i = 0; i < pool->sec_cnt; i++) {
+		sec[i].rv_sec.base = sec[i].fw_sec.base + sec[i].fw_sec.len;
 	}
 	return(0);
 }
 
 /**
- * @fn gref_remove_rv_seq
+ * @fn gref_flush_modified_seq
  */
 static _force_inline
-int gref_remove_rv_seq(
+int gref_flush_modified_seq(
 	struct gref_s *acv)
 {
-	if(acv->params.seq_direction == GREF_FW_ONLY) {
+	if(acv->params.copy_mode == GREF_NOCOPY) {
+		kv_ptr(acv->seq) = NULL;
 		return(0);
 	}
 
+	/* resize */
 	kv_resize(acv->seq, acv->seq_len);
-	return((kv_ptr(acv->seq) == NULL) ? -1 : 0);
+	if(kv_ptr(acv->seq) == NULL) { return(-1); }
+
+	/* subtract seq_base from fw_sec, clear rv_sec with NULL */
+	uint64_t seq_base = (uint64_t)kv_ptr(acv->seq) + acv->params.seq_head_margin;
+	struct gref_section_intl_s *sec =
+		(struct gref_section_intl_s *)hmap_get_object(acv->hmap, 0);
+	for(int64_t i = 0; i < 2 * (acv->sec_cnt + 1); i++) {
+		sec[i].fw_sec.base -= seq_base;
+		sec[i].rv_sec.base = NULL;
+	}
+	return(0);
 }
 
 /**
@@ -729,6 +863,8 @@ gref_acv_t *gref_freeze_pool(
 {
 	struct gref_s *gref = (struct gref_s *)pool;
 
+	debug("gref_freeze_pool called, gref(%p)", gref);
+
 	if(gref == NULL || gref->type != GREF_POOL) {
 		goto _gref_freeze_pool_error_handler;
 	}
@@ -736,12 +872,27 @@ gref_acv_t *gref_freeze_pool(
 	/* push tail sentinel */
 	gref_add_tail_section(gref);
 
-	/* build revcomp section info */
-	gref_calc_rv_pos(gref);
-
-	/* append rv seq if needed */
-	if(gref_append_rv_seq(gref) != 0) {
+	/* modify seq */
+	int (*modify_seq[][3])(struct gref_s *pool) = {
+		[GREF_FW_ONLY] = {
+			[GREF_COPY] = gref_fw_copy_modify_seq,
+			[GREF_NOCOPY] = gref_fw_nocopy_modify_seq
+		},
+		[GREF_FW_RV] = {
+			[GREF_COPY] = gref_fr_copy_modify_seq,
+			[GREF_NOCOPY] = gref_fr_nocopy_modify_seq
+		}
+	};
+	if(modify_seq[gref->params.seq_direction][gref->params.copy_mode](gref) != 0) {
 		goto _gref_freeze_pool_error_handler;
+	}
+
+	struct gref_section_intl_s const *sec = 
+		(struct gref_section_intl_s const *)hmap_get_object(pool->hmap, 0);
+	for(int64_t j = 0; j < pool->sec_cnt; j++) {
+		for(int64_t i = 0; i < sec[0].fw_sec.len; i++) {
+			debug("%p, %x", sec[0].fw_sec.base, sec[0].fw_sec.base[i]);
+		}
 	}
 
 	/* build link array */
@@ -776,8 +927,8 @@ gref_pool_t *gref_melt_archive(
 		goto _gref_melt_archive_error_handler;
 	}
 
-	/* remove reverse seq */
-	if(gref_remove_rv_seq(gref) != 0) {
+	/* flush modifications */
+	if(gref_flush_modified_seq(gref) != 0) {
 		goto _gref_melt_archive_error_handler;
 	}
 
@@ -819,7 +970,6 @@ struct gref_iter_stack_s {
 	uint32_t link_idx;
 
 	/* sequence info */
-	// uint8_t (*fetch)(struct gref_iter_stack_s *stack);
 	uint8_t const *seq_ptr;
 	int32_t incr;
 	uint32_t rem_len;
@@ -845,16 +995,15 @@ struct gref_iter_s {
 	uint8_t shift_len;
 	uint16_t reserved2;
 
-	uint8_t const *seq;
-	uint64_t seq_lim;
+	uint8_t const *seq_lim;
 	uint32_t const *link_table;
 	struct gref_section_half_s const *hsec;
 
 	/* stack mem array */
-	struct gref_iter_stack_s *stack, *root_stack;
+	struct gref_iter_stack_s *stack;
 	void *mem_arr[GREF_ITER_INTL_MEM_ARR_LEN];
 };
-_static_assert(sizeof(struct gref_iter_s) == 96);
+_static_assert(sizeof(struct gref_iter_s) == 80);
 
 /**
  * @fn gref_iter_add_stack
@@ -881,7 +1030,6 @@ struct gref_iter_stack_s *gref_iter_add_stack(
 	new_stack->shift_len = stack->shift_len;
 
 	/* copy buffer */
-	// new_stack->pos = stack->pos;
 	new_stack->len = stack->len;
 	new_stack->cnt_arr = stack->cnt_arr;
 	new_stack->kmer_idx = 0;
@@ -976,64 +1124,9 @@ int gref_iter_append_base(
 	return(0);
 }
 
-#if 0
 /**
- * @fn gref_iter_calc_seq_ptr
- * @brief len: length to fetch from base
+ * @fn gref_iter_fetch_base
  */
-static _force_inline
-uint8_t const *gref_iter_calc_seq_ptr(
-	struct gref_iter_s *p,
-	uint32_t gid)
-{
-	debug("gid(%u), id(%u)", gid, _decode_id(gid));
-	int64_t pos = p->hsec[gid].sec.base;
-
-	p->incr = 1;
-	if(pos >= p->seq_lim) {
-		pos = 2 * p->seq_lim - pos - 1;
-		p->incr = -1;
-	}
-
-	#if 0
-	for(int64_t i = 0; i < p->hsec[gid].sec.len; i++) {
-		debug("c(%u)", p->seq[pos + i]);
-	}
-
-	pos += (_decode_dir(gid) == 0)
-		? (len - 1)									/* forward */
-		: (p->sec[_decode_id(gid)].sec.len - len);	/* reverse */
-	debug("base(%lld), dir(%x), len_ofs(%u), pos(%lld)",
-		p->sec[_decode_id(gid)].sec.base,
-		_decode_dir(gid),
-		(_decode_dir(gid) == 0) ? (len - 1) : (p->sec[_decode_id(gid)].sec.len - len),
-		pos);
-	#endif
-	return(p->seq + pos);
-}
-#endif
-
-/**
- * @fn gref_iter_foward_fetch, gref_iter_reverse_fetch
- */
-#if 0
-static
-uint8_t gref_iter_foward_fetch(
-	struct gref_iter_stack_s *stack)
-{
-	debug("rem_len(%u), pos(%u), c(%x)", stack->rem_len - 1, stack->pos + 1, stack->seq_ptr[-((int64_t)(stack->rem_len - 1))]);
-	stack->pos++;
-	return(stack->seq_ptr[-((int64_t)(--stack->rem_len))]);
-}
-static
-uint8_t gref_iter_reverse_fetch(
-	struct gref_iter_stack_s *stack)
-{
-	debug("rem_len(%u), pos(%u), c(%x)", stack->rem_len - 1, stack->pos + 1, stack->seq_ptr[-((int64_t)(stack->rem_len - 1))]);
-	stack->pos++;
-	return(stack->seq_ptr[(int64_t)(--stack->rem_len)]);
-}
-#endif
 static _force_inline
 uint8_t gref_iter_fetch_base(
 	struct gref_iter_stack_s *stack)
@@ -1065,10 +1158,10 @@ struct gref_iter_stack_s *gref_iter_fetch(
 
 		/* remove stack if no more link remains */
 		debug("stack(%p), gid(%u), link_idx(%u), link_idx_base(%u)",
-			stack, stack->sec_gid, stack->link_idx, iter->sec[stack->sec_gid + 1].link_idx_base);
+			stack, stack->sec_gid, stack->link_idx, iter->hsec[stack->sec_gid + 1].link_idx_base);
 		while(stack->link_idx == iter->hsec[stack->sec_gid + 1].link_idx_base) {
 			debug("stack(%p), gid(%u), link_idx(%u), link_idx_base(%u)",
-				stack, stack->sec_gid, stack->link_idx, iter->sec[stack->sec_gid + 1].link_idx_base);
+				stack, stack->sec_gid, stack->link_idx, iter->hsec[stack->sec_gid + 1].link_idx_base);
 			if((stack = gref_iter_remove_stack(stack)) == NULL) {
 				/* root (reached the end of enumeration) */
 				debug("reached NULL");
@@ -1086,27 +1179,20 @@ struct gref_iter_stack_s *gref_iter_fetch(
 		/* init link info */
 		stack->sec_gid = gid;
 		stack->link_idx = iter->hsec[gid].link_idx_base;
-		// debug("link_table(%p), link_idx(%u)", iter->link_table, stack->link_idx);
 
 		/* init seq info */
-		#if 0
-		stack->fetch = (_decode_dir(gid) == 0)
-			? gref_iter_foward_fetch
-			: gref_iter_reverse_fetch;
-		#endif
-		// stack->seq_ptr = gref_iter_calc_seq_ptr(iter, gid);
-		int64_t pos = iter->hsec[gid].sec.base;
-		stack->seq_ptr = iter->seq + ((pos < iter->seq_lim)
-			? pos : (2 * iter->seq_lim - pos - 1));
-		stack->incr = (pos < iter->seq_lim) ? 1 : -1;
+		uint8_t const *base = iter->hsec[gid].sec.base;
+		stack->seq_ptr = (base < iter->seq_lim)
+			? base : (iter->seq_lim + (iter->seq_lim - base - 1));
+		stack->incr = (base < iter->seq_lim) ? 1 : -1;
 		stack->rem_len = MIN2(stack->global_rem_len, iter->hsec[gid].sec.len);
 		stack->len += stack->rem_len;
 
 		/* adjust global_rem_len */
 		stack->global_rem_len -= stack->rem_len;
 
-		debug("gid(%u), pos(%u), rem_len(%u), global_rem_len(%u)",
-			gid, stack->pos, stack->rem_len, stack->global_rem_len);
+		debug("gid(%u), seq_ptr(%p), len(%u), rem_len(%u), global_rem_len(%u)",
+			gid, stack->seq_ptr, stack->len, stack->rem_len, stack->global_rem_len);
 
 		/* fetch seq */
 		gref_iter_append_base(stack, gref_iter_fetch_base(stack));
@@ -1139,13 +1225,10 @@ struct gref_iter_stack_s *gref_iter_init_stack(
 	stack->link_idx = iter->hsec[gid].link_idx_base;
 
 	/* seq info */
-	// stack->fetch = gref_iter_foward_fetch;
-	// stack->seq_ptr = gref_iter_calc_seq_ptr(iter, gid);
-
-	int64_t pos = iter->hsec[gid].sec.base;
-	stack->seq_ptr = iter->seq + ((pos < iter->seq_lim)
-		? pos : (2 * iter->seq_lim - pos - 1));
-	stack->incr = (pos < iter->seq_lim) ? 1 : -1;
+	uint8_t const *base = iter->hsec[gid].sec.base;
+	stack->seq_ptr = (base < iter->seq_lim)
+		? base : (iter->seq_lim + (iter->seq_lim - base - 1));
+	stack->incr = (base < iter->seq_lim) ? 1 : -1;
 	stack->rem_len = len;
 	stack->len = len - iter->seed_len;
 
@@ -1172,6 +1255,8 @@ gref_iter_t *gref_iter_init(
 
 	debug("init_stack_size(%lld)", gref->iter_init_stack_size);
 
+	if(gref == NULL || gref->type == GREF_POOL) { return(NULL); }
+
 	/* malloc mem */
 	struct gref_iter_s *iter = (struct gref_iter_s *)malloc(
 		sizeof(struct gref_iter_s) + sizeof(uint64_t) * gref->iter_init_stack_size);
@@ -1189,15 +1274,12 @@ gref_iter_t *gref_iter_init(
 	/* set params */
 	iter->seed_len = acv->params.k;
 	iter->shift_len = 2 * (acv->params.k - 1);
-	iter->seq = gref_get_ptr(acv);
-	iter->seq_lim = (acv->params.seq_direction == GREF_FW_ONLY)
-		? gref_get_total_len(acv)
-		: 2 * gref_get_total_len(acv);
+	iter->seq_lim = gref->seq_lim;
 	iter->link_table = acv->link_table;
 	iter->hsec = (struct gref_section_half_s const *)hmap_get_object(acv->hmap, 0);
 
 	/* init stack */
-	iter->stack = iter->root_stack = gref_iter_init_stack(iter,
+	iter->stack = gref_iter_init_stack(iter,
 		(struct gref_iter_stack_s *)(iter + 1));
 
 	debug("stack(%p), iter(%p)", iter->stack, iter);
@@ -1217,7 +1299,7 @@ struct gref_kmer_tuple_s gref_iter_next(
 		debug("return kmer(%llx), gid(%u), pos(%u)", \
 			(_stack)->kmer[(_stack)->kmer_idx], \
 			(_stack)->sec_gid, \
-			(_stack)->pos); \
+			(_stack)->len - (_stack)->rem_len); \
 		return((struct gref_kmer_tuple_s){ \
 			.kmer = (_stack)->kmer[(_stack)->kmer_idx++], \
 			.gid_pos = (struct gref_gid_pos_s){ \
@@ -1234,7 +1316,8 @@ struct gref_kmer_tuple_s gref_iter_next(
 		return_kmer(iter, stack);
 	} else if((iter->base_gid += 2) < iter->tail_gid) {
 		debug("base_gid(%u), tail_gid(%u)", iter->base_gid, iter->tail_gid);
-		iter->stack = stack = gref_iter_init_stack(iter, iter->root_stack);
+		iter->stack = stack = gref_iter_init_stack(iter,
+			(struct gref_iter_stack_s *)(iter + 1));
 		return_kmer(iter, stack);
 	}
 
@@ -1479,9 +1562,10 @@ int64_t gref_get_section_cnt(
 
 /**
  * @fn gref_get_section
+ * @brief type must be ACV or IDX, otherwise return value is invalid
  */
 struct gref_section_s const *gref_get_section(
-	gref_t const *_gref,
+	gref_acv_t const *_gref,
 	uint32_t gid)
 {
 	struct gref_s *gref = (struct gref_s *)_gref;
@@ -1489,18 +1573,14 @@ struct gref_section_s const *gref_get_section(
 	struct gref_section_half_s *base =
 		(struct gref_section_half_s *)hmap_get_object(gref->hmap, 0);
 	return((struct gref_section_s const *)&base[gid].sec);
-/*
-	struct gref_section_half_s *sec =
-		(struct gref_section_half_s *)hmap_get_object(gref->hmap, _decode_id(gid));
-	return((struct gref_section_s const *)&sec->sec);
-*/
 }
 
 /**
  * @fn gref_get_link
+ * @brief type must be ACV or IDX, otherwise return value is invalid
  */
 struct gref_link_s gref_get_link(
-	gref_t const *_gref,
+	gref_acv_t const *_gref,
 	uint32_t gid)
 {
 	struct gref_s *gref = (struct gref_s *)_gref;
@@ -1528,6 +1608,8 @@ struct gref_str_s gref_get_name(
 	});
 }
 
+#if 0
+/* deprecated */
 /**
  * @fn gref_get_ptr
  */
@@ -1537,6 +1619,7 @@ uint8_t const *gref_get_ptr(
 	struct gref_s const *gref = (struct gref_s const *)_gref;
 	return((uint8_t const *)kv_ptr(gref->seq) + gref->params.seq_head_margin);
 }
+#endif
 
 /**
  * @fn gref_get_total_len
@@ -1545,10 +1628,19 @@ int64_t gref_get_total_len(
 	gref_t const *_gref)
 {
 	struct gref_s const *gref = (struct gref_s const *)_gref;
-	// return(kv_size(gref->seq));
 	return(gref->seq_len);
 }
 
+/**
+ * @fn gref_get_lim
+ * @brief type must be ACV or IDX, otherwise return value is invalid
+ */
+uint8_t const *gref_get_lim(
+	gref_acv_t const *_gref)
+{
+	struct gref_s const *gref = (struct gref_s const *)_gref;
+	return(gref->seq_lim);
+}
 
 /**
  * unittests
@@ -1617,11 +1709,13 @@ unittest()
 	gref_clean(pool);
 }
 
-/* archive */
+/* archive (fw_copy) */
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
 		.k = 3,
+		.seq_direction = GREF_FW_ONLY,
+		.copy_mode = GREF_COPY,
 		.seq_head_margin = 32,
 		.seq_tail_margin = 32));
 
@@ -1646,8 +1740,148 @@ unittest()
 	/* total len */
 	assert(gref_get_total_len(acv) == 13, "len(%lld)", gref_get_total_len(acv));
 
+	/* get lim */
+	assert(gref_get_lim(acv) == GREF_SEQ_LIM, "lim(%p)", gref_get_lim(acv));
+
+	/* check bases at the head of the sections */
+	assert(gref_get_section(acv, 0)->base[0] == 0x04, "%x", gref_get_section(acv, 0)->base[0]);
+	assert(gref_get_section(acv, 2)->base[0] == 0x03, "%x", gref_get_section(acv, 2)->base[0]);
+	assert(gref_get_section(acv, 4)->base[0] == 0x01, "%x", gref_get_section(acv, 4)->base[0]);
+
 	gref_clean(acv);
 }
+
+/* archive (fw_nocopy) */
+unittest()
+{
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
+		.k = 3,
+		.seq_direction = GREF_FW_ONLY,
+		.seq_format = GREF_4BIT,
+		.copy_mode = GREF_NOCOPY,
+		.seq_head_margin = 32,
+		.seq_tail_margin = 32));
+
+	/* append */
+	gref_append_segment(pool, _str("sec0"), _seq("\x04\x04\x05\x01"));
+	gref_append_segment(pool, _str("sec1"), _seq("\x03"));
+	gref_append_link(pool, _str("sec0"), 0, _str("sec1"), 0);
+	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
+	gref_append_segment(pool, _str("sec2"), _seq("\x01\x03\x07\x07\x04\x08\x04\x08"));
+	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
+
+	/* build index */
+	gref_acv_t *acv = gref_freeze_pool(pool);
+	assert(acv != NULL, "acv(%p)", acv);
+
+	assert(acv->type == GREF_ACV, "%d", acv->type);
+	assert(acv->link_table != NULL, "%p", acv->link_table);
+
+	/* section count */
+	assert(gref_get_section_cnt(acv) == 3, "%lld", gref_get_section_cnt(acv));
+
+	/* total len */
+	assert(gref_get_total_len(acv) == 13, "len(%lld)", gref_get_total_len(acv));
+
+	/* get lim */
+	assert(gref_get_lim(acv) == GREF_SEQ_LIM, "lim(%p)", gref_get_lim(acv));
+
+	/* check bases at the head of the sections */
+	assert(gref_get_section(acv, 0)->base[0] == 0x04, "%x", gref_get_section(acv, 0)->base[0]);
+	assert(gref_get_section(acv, 2)->base[0] == 0x03, "%x", gref_get_section(acv, 2)->base[0]);
+	assert(gref_get_section(acv, 4)->base[0] == 0x01, "%x", gref_get_section(acv, 4)->base[0]);
+
+	gref_clean(acv);
+}
+
+/* archive (fr_copy) */
+unittest()
+{
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
+		.k = 3,
+		.seq_direction = GREF_FW_RV,
+		.copy_mode = GREF_COPY,
+		.seq_head_margin = 32,
+		.seq_tail_margin = 32));
+
+	/* append */
+	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
+	gref_append_segment(pool, _str("sec1"), _seq("M"));
+	gref_append_link(pool, _str("sec0"), 0, _str("sec1"), 0);
+	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
+	gref_append_segment(pool, _str("sec2"), _seq("ACVVGTGT"));
+	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
+
+	/* build index */
+	gref_acv_t *acv = gref_freeze_pool(pool);
+	assert(acv != NULL, "acv(%p)", acv);
+
+	assert(acv->type == GREF_ACV, "%d", acv->type);
+	assert(acv->link_table != NULL, "%p", acv->link_table);
+
+	/* section count */
+	assert(gref_get_section_cnt(acv) == 3, "%lld", gref_get_section_cnt(acv));
+
+	/* total len */
+	assert(gref_get_total_len(acv) == 13, "len(%lld)", gref_get_total_len(acv));
+
+	/* get lim */
+	assert(gref_get_lim(acv) == kv_ptr(acv->seq) + 2 * acv->seq_len + 32, "lim(%p)", gref_get_lim(acv));
+
+	/* check bases at the head of the sections */
+	assert(gref_get_section(acv, 0)->base[0] == 0x04, "%x", gref_get_section(acv, 0)->base[0]);
+	assert(gref_get_section(acv, 1)->base[0] == 0x08, "%x", gref_get_section(acv, 1)->base[0]);
+	assert(gref_get_section(acv, 2)->base[0] == 0x03, "%x", gref_get_section(acv, 2)->base[0]);
+	assert(gref_get_section(acv, 3)->base[0] == 0x0c, "%x", gref_get_section(acv, 3)->base[0]);
+	assert(gref_get_section(acv, 4)->base[0] == 0x01, "%x", gref_get_section(acv, 4)->base[0]);
+	assert(gref_get_section(acv, 5)->base[0] == 0x01, "%x", gref_get_section(acv, 5)->base[0]);
+
+	gref_clean(acv);
+}
+
+/* archive (fr_nocopy) */
+unittest()
+{
+	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
+		.k = 3,
+		.seq_direction = GREF_FW_RV,
+		.seq_format = GREF_4BIT,
+		.copy_mode = GREF_NOCOPY,
+		.seq_head_margin = 32,
+		.seq_tail_margin = 32));
+
+	/* append */
+	gref_append_segment(pool, _str("sec0"), _seq("\x04\x04\x05\x01"));
+	gref_append_segment(pool, _str("sec1"), _seq("\x03"));
+	gref_append_link(pool, _str("sec0"), 0, _str("sec1"), 0);
+	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
+	gref_append_segment(pool, _str("sec2"), _seq("\x01\x03\x07\x07\x04\x08\x04\x08"));
+	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
+
+	/* build index */
+	gref_acv_t *acv = gref_freeze_pool(pool);
+	assert(acv != NULL, "acv(%p)", acv);
+
+	assert(acv->type == GREF_ACV, "%d", acv->type);
+	assert(acv->link_table != NULL, "%p", acv->link_table);
+
+	/* section count */
+	assert(gref_get_section_cnt(acv) == 3, "%lld", gref_get_section_cnt(acv));
+
+	/* total len */
+	assert(gref_get_total_len(acv) == 13, "len(%lld)", gref_get_total_len(acv));
+
+	/* get lim */
+	assert(gref_get_lim(acv) == GREF_SEQ_LIM, "lim(%p)", gref_get_lim(acv));
+
+	/* check bases at the head of the sections */
+	assert(gref_get_section(acv, 0)->base[0] == 0x04, "%x", gref_get_section(acv, 0)->base[0]);
+	assert(gref_get_section(acv, 2)->base[0] == 0x03, "%x", gref_get_section(acv, 2)->base[0]);
+	assert(gref_get_section(acv, 4)->base[0] == 0x01, "%x", gref_get_section(acv, 4)->base[0]);
+
+	gref_clean(acv);
+}
+
 
 /* seed iteration */
 unittest()
@@ -1777,10 +2011,6 @@ unittest()
 	gref_idx_t *idx = gref_build_index(pool);
 	assert(idx != NULL, "idx(%p)", idx);
 
-	/* pointer to seq */
-	uint8_t const *ptr = gref_get_ptr(idx);
-	assert(ptr != NULL, "ptr(%p)", ptr);
-
 	/* section count */
 	assert(gref_get_section_cnt(idx) == 3, "%lld", gref_get_section_cnt(idx));
 
@@ -1803,44 +2033,54 @@ unittest()
 	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
 	gref_append_segment(pool, _str("sec2"), _seq("ACVVGTGT"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
-	gref_acv_t *acv = gref_freeze_pool(pool);
-	gref_idx_t *idx = gref_build_index(pool);
+	gref_idx_t *idx = gref_build_index(gref_freeze_pool(pool));
+
+	#define _calc_base_sum(_id) ( \
+		  (uint64_t)gref_get_section(idx, (_id))->base \
+		+ (uint64_t)gref_get_section(idx, (_id) + 1)->base \
+		+ (uint64_t)gref_get_section(idx, (_id) + 1)->len \
+	)
 
 	/* section id is given in ascending order from 0 */
 	assert(gref_get_section(idx, 0) != NULL, "%p", gref_get_section(idx, 0));
 	assert(gref_get_section(idx, 0)->gid == 0, "gid(%u)", gref_get_section(idx, 0)->gid);
 	assert(gref_get_section(idx, 0)->len == 4, "len(%u)", gref_get_section(idx, 0)->len);
-	assert(gref_get_section(idx, 0)->base == 0, "base(%llu)", gref_get_section(idx, 0)->base);
 
 	/* section 0 in reverse */
 	assert(gref_get_section(idx, 1) != NULL, "%p", gref_get_section(idx, 1));
 	assert(gref_get_section(idx, 1)->gid == 1, "gid(%u)", gref_get_section(idx, 1)->gid);
 	assert(gref_get_section(idx, 1)->len == 4, "len(%u)", gref_get_section(idx, 1)->len);
-	assert(gref_get_section(idx, 1)->base == 28, "base(%llu)", gref_get_section(idx, 1)->base);
+
+	/* check section 0/1 ptr */
+	assert(_calc_base_sum(0) == 2 * (uint64_t)GREF_SEQ_LIM, "%llx", _calc_base_sum(0));
 
 	/* section 1 */
 	assert(gref_get_section(idx, 2) != NULL, "%p", gref_get_section(idx, 2));
 	assert(gref_get_section(idx, 2)->gid == 2, "gid(%u)", gref_get_section(idx, 2)->gid);
 	assert(gref_get_section(idx, 2)->len == 4, "len(%u)", gref_get_section(idx, 2)->len);
-	assert(gref_get_section(idx, 2)->base == 4, "base(%llu)", gref_get_section(idx, 2)->base);
 
 	/* section 1 in reverse */
 	assert(gref_get_section(idx, 3) != NULL, "%p", gref_get_section(idx, 3));
 	assert(gref_get_section(idx, 3)->gid == 3, "gid(%u)", gref_get_section(idx, 3)->gid);
 	assert(gref_get_section(idx, 3)->len == 4, "len(%u)", gref_get_section(idx, 3)->len);
-	assert(gref_get_section(idx, 3)->base == 24, "base(%llu)", gref_get_section(idx, 3)->base);
+
+	/* check section 2/3 ptr */
+	assert(_calc_base_sum(2) == 2 * (uint64_t)GREF_SEQ_LIM, "%llx", _calc_base_sum(2));
 
 	/* section 2 */
 	assert(gref_get_section(idx, 4) != NULL, "%p", gref_get_section(idx, 4));
 	assert(gref_get_section(idx, 4)->gid == 4, "gid(%u)", gref_get_section(idx, 4)->gid);
 	assert(gref_get_section(idx, 4)->len == 8, "len(%u)", gref_get_section(idx, 4)->len);
-	assert(gref_get_section(idx, 4)->base == 8, "base(%llu)", gref_get_section(idx, 4)->base);
 
 	/* section 2 in reverse */
 	assert(gref_get_section(idx, 5) != NULL, "%p", gref_get_section(idx, 5));
 	assert(gref_get_section(idx, 5)->gid == 5, "gid(%u)", gref_get_section(idx, 5)->gid);
 	assert(gref_get_section(idx, 5)->len == 8, "len(%u)", gref_get_section(idx, 5)->len);
-	assert(gref_get_section(idx, 5)->base == 16, "base(%llu)", gref_get_section(idx, 5)->base);
+
+	/* check section 4/5 ptr */
+	assert(_calc_base_sum(4) == 2 * (uint64_t)GREF_SEQ_LIM, "%llx", _calc_base_sum(4));
+
+	#undef _calc_base_sum
 
 	gref_clean(idx);
 }
@@ -1858,8 +2098,7 @@ unittest()
 	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
 	gref_append_segment(pool, _str("sec2"), _seq("ACVVGTGT"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
-	gref_acv_t *acv = gref_freeze_pool(pool);
-	gref_idx_t *idx = gref_build_index(pool);
+	gref_idx_t *idx = gref_build_index(gref_freeze_pool(pool));
 
 	struct gref_link_s l = gref_get_link(idx, 0);
 	assert(l.len == 2, "len(%lld)", l.len);
@@ -1901,8 +2140,7 @@ unittest()
 	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
 	gref_append_segment(pool, _str("sec2"), _seq("ACVVGTGT"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
-	gref_acv_t *acv = gref_freeze_pool(pool);
-	gref_idx_t *idx = gref_build_index(pool);
+	gref_idx_t *idx = gref_build_index(gref_freeze_pool(pool));
 
 	/* section id is given in ascending order from 0 */
 	assert(gref_get_name(idx, 0).len == 4, "%d", gref_get_name(idx, 0).len);
@@ -1941,8 +2179,8 @@ unittest()
 	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
 	gref_append_segment(pool, _str("sec2"), _seq("ACVVGTGT"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
-	gref_acv_t *acv = gref_freeze_pool(pool);
-	gref_idx_t *idx = gref_build_index(pool);
+	gref_idx_t *idx = gref_build_index(gref_freeze_pool(pool));
+
 
 	/* without ambiguous bases */
 	struct gref_match_res_s r = gref_match(idx, (uint8_t const *)"GTG");
@@ -1956,7 +2194,6 @@ unittest()
 	struct gref_section_s const *sec = gref_get_section(idx, r.gid_pos_arr[0].gid);
 	assert(sec->gid == 4, "gid(%u)", sec->gid);
 	assert(sec->len == 8, "len(%u)", sec->len);
-	assert(sec->base == 8, "base(%llu)", sec->base);
 
 
 	/* with ambiguous bases */
@@ -1971,7 +2208,6 @@ unittest()
 	sec = gref_get_section(idx, r.gid_pos_arr[0].gid);
 	assert(sec->gid == 0, "gid(%u)", sec->gid);
 	assert(sec->len == 4, "len(%u)", sec->len);
-	assert(sec->base == 0, "base(%llu)", sec->base);
 
 	/* check pos */
 	assert(r.gid_pos_arr[1].pos == 1, "%u", r.gid_pos_arr[1].pos);
@@ -1980,7 +2216,6 @@ unittest()
 	sec = gref_get_section(idx, r.gid_pos_arr[1].gid);
 	assert(sec->gid == 2, "gid(%u)", sec->gid);
 	assert(sec->len == 4, "len(%u)", sec->len);
-	assert(sec->base == 4, "base(%llu)", sec->base);
 
 	/* check pos */
 	assert(r.gid_pos_arr[2].pos == 2, "%u", r.gid_pos_arr[2].pos);
@@ -1989,7 +2224,6 @@ unittest()
 	sec = gref_get_section(idx, r.gid_pos_arr[2].gid);
 	assert(sec->gid == 4, "gid(%u)", sec->gid);
 	assert(sec->len == 8, "len(%u)", sec->len);
-	assert(sec->base == 8, "base(%llu)", sec->base);
 
 	gref_clean(idx);
 }

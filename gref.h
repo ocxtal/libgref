@@ -115,7 +115,7 @@ typedef struct gref_params_s gref_params_t;
 struct gref_section_s {
 	uint32_t gid;
 	uint32_t len;
-	uint64_t base;
+	uint8_t const *base;
 };
 typedef struct gref_section_s gref_section_t;
 
@@ -223,7 +223,7 @@ int gref_append_segment(
 /**
  * @fn gref_append_link
  *
- * @brief append a edge on graph (not implemented yet)
+ * @brief append a edge on graph
  */
 int gref_append_link(
 	gref_pool_t *pool,
@@ -233,6 +233,29 @@ int gref_append_link(
 	char const *dst,
 	int32_t dst_len,
 	int32_t dst_ori);
+
+/**
+ * @fn gref_append_snp
+ * @brief not implemented yet (;_;)
+ */
+int gref_append_snp(
+	gref_pool_t *_pool,
+	char const *name,
+	int32_t name_len,
+	int64_t pos,
+	uint8_t snp);
+
+/**
+ * @fn gref_split_segment
+ * @brief not implemented yet (;_;)
+ */
+int gref_split_segment(
+	gref_pool_t *_pool,
+	char const *base,
+	int32_t base_len,
+	int64_t pos,
+	char const *splitted,
+	int32_t splitted_len);
 
 #if 0
 /**
@@ -292,7 +315,7 @@ int64_t gref_get_section_cnt(
  * @fn gref_get_section
  */
 struct gref_section_s const *gref_get_section(
-	gref_t const *gref,
+	gref_acv_t const *gref,
 	uint32_t gid);
 
 /**
@@ -309,17 +332,27 @@ struct gref_str_s gref_get_name(
 	gref_t const *gref,
 	uint32_t gid);
 
+#if 0
+/* deprecated */
 /**
  * @fn gref_get_ptr
  */
 uint8_t const *gref_get_ptr(
 	gref_t const *gref);
+#endif
 
 /**
  * @fn gref_get_total_len
  */
 int64_t gref_get_total_len(
 	gref_t const *gref);
+
+/**
+ * @fn gref_get_lim
+ */
+uint8_t const *gref_get_lim(
+	gref_t const *gref);
+
 
 #if 0
 /**

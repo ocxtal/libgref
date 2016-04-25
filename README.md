@@ -185,7 +185,7 @@ Get section info by section gid.
 
 ```
 struct gref_section_s const *gref_get_section(
-	gref_t const *ref,
+	gref_acv_t const *ref,
 	uint32_t gid);
 ```
 
@@ -195,7 +195,7 @@ Get link by section gid.
 
 ```
 struct gref_link_s gref_get_link(
-	gref_t const *ref,
+	gref_acv_t const *ref,
 	uint32_t gid);
 ```
 
