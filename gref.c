@@ -414,9 +414,11 @@ void gref_clean(
 		/* cleanup, cleanup... */
 		hmap_clean(gref->hmap); gref->hmap = NULL;
 		kv_destroy(gref->seq);
-		free(gref->link_table); gref->link_table = NULL;
+		kv_destroy(gref->link);
+		// free(gref->link_table); gref->link_table = NULL;
 		free(gref->kmer_idx_table); gref->kmer_idx_table = NULL;
 		free(gref->kmer_table); gref->kmer_table = NULL;
+		free(gref);
 	}
 	return;
 }
@@ -1344,7 +1346,7 @@ void gref_iter_clean(
 	struct gref_iter_stack_s *stack = iter->stack;
 	debug("stack(%p), iter(%p)", stack, iter);
 
-	if(stack != NULL) {
+	if(iter != NULL) {
 		for(int64_t i = 0; i < GREF_ITER_INTL_MEM_ARR_LEN; i++) {
 			free(iter->mem_arr[i]); iter->mem_arr[i] = NULL;
 		}

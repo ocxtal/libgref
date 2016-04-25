@@ -434,6 +434,7 @@ char *ut_dump_nm_output(
 	if(pclose(fp) != 0) {
 		goto _ut_nm_error_handler;
 	}
+	free(cmd); cmd = NULL;
 	return(res);
 
 _ut_nm_error_handler:
