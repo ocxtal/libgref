@@ -1851,12 +1851,16 @@ unittest()
 		.seq_tail_margin = 32));
 
 	/* append */
-	gref_append_segment(pool, _str("sec0"), _seq("\x04\x04\x05\x01"));
-	gref_append_segment(pool, _str("sec1"), _seq("\x03"));
+	#define _seqrv(x)		(uint8_t const *)(x), strlen(x)/2
+
+	gref_append_segment(pool, _str("sec0"), _seqrv("\x04\x04\x05\x01\x08\x0a\x02\x02"));
+	gref_append_segment(pool, _str("sec1"), _seqrv("\x03\x0c"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec1"), 0);
 	gref_append_link(pool, _str("sec1"), 0, _str("sec2"), 0);
-	gref_append_segment(pool, _str("sec2"), _seq("\x01\x03\x07\x07\x04\x08\x04\x08"));
+	gref_append_segment(pool, _str("sec2"), _seqrv("\x01\x03\x07\x07\x04\x08\x04\x08\x01\x02\x01\x02\x0e\x0e\x0c\x08"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec2"), 0);
+
+	#undef _seqrv
 
 	/* build index */
 	gref_acv_t *acv = gref_freeze_pool(pool);
@@ -1876,8 +1880,11 @@ unittest()
 
 	/* check bases at the head of the sections */
 	assert(gref_get_section(acv, 0)->base[0] == 0x04, "%x", gref_get_section(acv, 0)->base[0]);
+	assert(gref_get_section(acv, 1)->base[0] == 0x08, "%x", gref_get_section(acv, 1)->base[0]);
 	assert(gref_get_section(acv, 2)->base[0] == 0x03, "%x", gref_get_section(acv, 2)->base[0]);
+	assert(gref_get_section(acv, 3)->base[0] == 0x0c, "%x", gref_get_section(acv, 3)->base[0]);
 	assert(gref_get_section(acv, 4)->base[0] == 0x01, "%x", gref_get_section(acv, 4)->base[0]);
+	assert(gref_get_section(acv, 5)->base[0] == 0x01, "%x", gref_get_section(acv, 5)->base[0]);
 
 	gref_clean(acv);
 }
