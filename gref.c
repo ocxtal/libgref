@@ -8,6 +8,12 @@
  * @date 2016/3/25
  * @license MIT
  */
+
+#define UNITTEST_UNIQUE_ID			50
+#define UNITTEST 					1
+
+#include "unittest.h"
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <math.h>
@@ -20,15 +26,6 @@
 #include "sassert.h"
 #include "log.h"
 
-#define UNITTEST_UNIQUE_ID			50
-
-#ifdef TEST
-/* use auto-generated main function to run tests */
-#define UNITTEST 					1
-#define UNITTEST_ALIAS_MAIN			1
-#endif
-
-#include "unittest.h"
 
 /* inline directive */
 #define _force_inline				inline
@@ -348,7 +345,11 @@ gref_pool_t *gref_init_pool(
 	pool->type = GREF_POOL;
 
 	/* calc iterator buffer size */
-	pool->iter_init_stack_size = MAX2(1024, (int64_t)pow(3.0, p.k * 0.5));
+	int64_t buf_size = 1;
+	for(int64_t i = 0; i < (p.k + 1) / 2; i++) {
+		buf_size *= 3;
+	}
+	pool->iter_init_stack_size = MAX2(1024, buf_size);
 
 	/* init seq vector */
 	if(p.copy_mode != GREF_NOCOPY) {
@@ -1343,8 +1344,7 @@ void gref_iter_clean(
 	gref_iter_t *_iter)
 {
 	struct gref_iter_s *iter = (struct gref_iter_s *)_iter;
-	struct gref_iter_stack_s *stack = iter->stack;
-	debug("stack(%p), iter(%p)", stack, iter);
+	debug("stack(%p), iter(%p)", iter->stack, iter);
 
 	if(iter != NULL) {
 		for(int64_t i = 0; i < GREF_ITER_INTL_MEM_ARR_LEN; i++) {
