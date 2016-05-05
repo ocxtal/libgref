@@ -306,9 +306,9 @@ struct gref_match_res_s gref_match_2bitpacked(
 	uint64_t seq);
 
 /**
- * @fn gref_get_section_cnt
+ * @fn gref_get_section_count
  */
-int64_t gref_get_section_cnt(
+int64_t gref_get_section_count(
 	gref_t const *gref);
 
 /**

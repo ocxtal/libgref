@@ -1553,9 +1553,9 @@ gref_t *gref_load_index(
 #endif
 
 /**
- * @fn gref_get_section_cnt
+ * @fn gref_get_section_count
  */
-int64_t gref_get_section_cnt(
+int64_t gref_get_section_count(
 	gref_t const *_gref)
 {
 	struct gref_s *gref = (struct gref_s *)_gref;
@@ -1703,7 +1703,7 @@ unittest()
 	assert(ret == 0, "ret(%d)", ret);
 
 	/* section count */
-	assert(gref_get_section_cnt(pool) == 3, "%lld", gref_get_section_cnt(pool));
+	assert(gref_get_section_count(pool) == 3, "%lld", gref_get_section_count(pool));
 
 	/* total len */
 	assert(gref_get_total_len(pool) == 12, "len(%lld)", gref_get_total_len(pool));
@@ -1737,7 +1737,7 @@ unittest()
 	assert(acv->link_table != NULL, "%p", acv->link_table);
 
 	/* section count */
-	assert(gref_get_section_cnt(acv) == 3, "%lld", gref_get_section_cnt(acv));
+	assert(gref_get_section_count(acv) == 3, "%lld", gref_get_section_count(acv));
 
 	/* total len */
 	assert(gref_get_total_len(acv) == 13, "len(%lld)", gref_get_total_len(acv));
@@ -1780,7 +1780,7 @@ unittest()
 	assert(acv->link_table != NULL, "%p", acv->link_table);
 
 	/* section count */
-	assert(gref_get_section_cnt(acv) == 3, "%lld", gref_get_section_cnt(acv));
+	assert(gref_get_section_count(acv) == 3, "%lld", gref_get_section_count(acv));
 
 	/* total len */
 	assert(gref_get_total_len(acv) == 13, "len(%lld)", gref_get_total_len(acv));
@@ -1822,7 +1822,7 @@ unittest()
 	assert(acv->link_table != NULL, "%p", acv->link_table);
 
 	/* section count */
-	assert(gref_get_section_cnt(acv) == 3, "%lld", gref_get_section_cnt(acv));
+	assert(gref_get_section_count(acv) == 3, "%lld", gref_get_section_count(acv));
 
 	/* total len */
 	assert(gref_get_total_len(acv) == 13, "len(%lld)", gref_get_total_len(acv));
@@ -1872,7 +1872,7 @@ unittest()
 	assert(acv->link_table != NULL, "%p", acv->link_table);
 
 	/* section count */
-	assert(gref_get_section_cnt(acv) == 3, "%lld", gref_get_section_cnt(acv));
+	assert(gref_get_section_count(acv) == 3, "%lld", gref_get_section_count(acv));
 
 	/* total len */
 	assert(gref_get_total_len(acv) == 13, "len(%lld)", gref_get_total_len(acv));
@@ -2021,7 +2021,7 @@ unittest()
 	assert(idx != NULL, "idx(%p)", idx);
 
 	/* section count */
-	assert(gref_get_section_cnt(idx) == 3, "%lld", gref_get_section_cnt(idx));
+	assert(gref_get_section_count(idx) == 3, "%lld", gref_get_section_count(idx));
 
 	/* total len */
 	assert(gref_get_total_len(idx) == 16, "len(%lld)", gref_get_total_len(idx));
