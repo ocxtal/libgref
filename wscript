@@ -33,9 +33,6 @@ def build(bld):
 
 	bld.objects(source = 'gref.c', target = 'gref.o')
 
-	print(bld.env.LIB_GREF)
-	print(bld.env.OBJ_GREF)
-
 	bld.stlib(
 		source = ['unittest.c'],
 		target = 'gref',
