@@ -335,13 +335,14 @@ void ut_print_header_json(
 	struct ut_global_config_s const *gconf,
 	struct ut_group_config_s const *config)
 {
+	fprintf(gconf->fp, "\t{\n");
 	if(config->name != NULL) {
-		fprintf(gconf->fp, "\t\"group\": \"%s\",\n", config->name);
+		fprintf(gconf->fp, "\t\t\"group\": \"%s\",\n", config->name);
 	}
 	if(config->file != NULL) {
-		fprintf(gconf->fp, "\t\"filename\": \"%s\",\n", config->file);
+		fprintf(gconf->fp, "\t\t\"filename\": \"%s\",\n", config->file);
 	}
-	fprintf(gconf->fp, "\t\"fails\": [\n");
+	fprintf(gconf->fp, "\t\t\"fails\": [\n");
 	return;
 }
 
@@ -380,7 +381,8 @@ void ut_print_footer_json(
 	struct ut_global_config_s const *gconf,
 	struct ut_group_config_s const *config)
 {
-	fprintf(gconf->fp, "\t],\n");
+	fprintf(gconf->fp, "\t\t],\n");
+	fprintf(gconf->fp, "\t},\n");
 	return;
 }
 
