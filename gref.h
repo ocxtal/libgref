@@ -156,7 +156,7 @@ struct gref_kmer_tuple_s {
 typedef struct gref_kmer_tuple_s gref_kmer_tuple_t;
 
 /* encode and decode id */
-#define gref_rev(_gid)			( 0x01 ^ (_gid) )
+#define gref_rev_gid(_gid)		( 0x01 ^ (_gid) )
 #define gref_gid(_id, _d)		( ((_id)<<1) | (0x01 & (_d)) )
 #define gref_id(_gid)			( (_gid)>>1 )
 #define gref_dir(_gid)			( (_gid) & 0x01 )
@@ -352,7 +352,7 @@ int64_t gref_get_total_len(
  */
 uint8_t const *gref_get_lim(
 	gref_t const *gref);
-
+#define gref_rev_ptr(ptr, lim)		( (uint8_t const *)(ptr) + ((uint64_t)(ptr) - (uint64_t)(lim)) )
 
 #if 0
 /**
