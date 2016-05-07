@@ -352,7 +352,7 @@ int64_t gref_get_total_len(
  */
 uint8_t const *gref_get_lim(
 	gref_t const *gref);
-#define gref_rev_ptr(ptr, lim)		( (uint8_t const *)(ptr) + ((uint64_t)(ptr) - (uint64_t)(lim)) )
+#define gref_rev_ptr(ptr, lim)		( (uint8_t const *)(lim) + (uint64_t)(lim) - (uint64_t)(ptr) )
 
 #if 0
 /**
