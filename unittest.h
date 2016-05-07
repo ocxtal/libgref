@@ -505,11 +505,11 @@ struct ut_printer_s ut_json_printer = {
  * memory dump macro
  */
 #define ut_dump(ptr, len) ({ \
-	uint64_t size = (((len) + 15) / 16 + 1) * \
+	uint64_t _size = (((len) + 15) / 16 + 1) * \
 		(strlen("0x0123456789abcdef:") + 16 * strlen(" 00a") + strlen("  \n+ margin")) \
 		+ strlen(#ptr) + strlen("\n`' len: 100000000"); \
 	uint8_t *_ptr = (uint8_t *)(ptr); \
-	char *_str = alloca(size); \
+	char *_str = alloca(_size); \
 	char *_s = _str; \
 	/* make header */ \
 	_s += sprintf(_s, "\n`%s' len: %" PRId64 "\n", #ptr, (int64_t)len); \
