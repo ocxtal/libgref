@@ -156,6 +156,8 @@ struct gref_kmer_tuple_s {
 typedef struct gref_kmer_tuple_s gref_kmer_tuple_t;
 
 /* encode and decode id */
+#define GREF_FW 				( 0 )
+#define GREF_RV 				( 0x01 )
 #define gref_rev_gid(_gid)		( 0x01 ^ (_gid) )
 #define gref_gid(_id, _d)		( ((_id)<<1) | (0x01 & (_d)) )
 #define gref_id(_gid)			( (_gid)>>1 )
