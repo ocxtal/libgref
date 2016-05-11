@@ -963,25 +963,26 @@ struct gref_iter_stack_s {
 	/* previous stack */
 	struct gref_iter_stack_s *prev_stack;
 
-	/* global params */
-	uint8_t global_rem_len;
-	uint8_t shift_len;
-	uint16_t reserved1;
-
 	/* current section info */
 	uint32_t sec_gid;
 	uint32_t link_idx;
+	uint8_t const *seq_ptr;
 
 	/* sequence info */
-	uint8_t const *seq_ptr;
-	int32_t incr;
-	uint32_t rem_len;
+	int8_t incr;
+	uint8_t rem_len;
+
+	/* global params */
+	uint8_t global_rem_len;
+	uint8_t shift_len;
+
+	/* sequence info (cont'd) */
 	uint32_t len;
 
 	/* kmer table */
+	uint16_t kmer_idx;
+	uint16_t kmer_table_size;
 	uint64_t cnt_arr;
-	uint32_t kmer_idx;
-	uint32_t kmer_occ;
 	uint64_t kmer[];
 };
 
@@ -1018,10 +1019,10 @@ struct gref_iter_stack_s *gref_iter_add_stack(
 {
 	/* fixme: check remaining memory size and malloc if there is no room */
 	struct gref_iter_stack_s *new_stack = (struct gref_iter_stack_s *)(
-		(uint64_t *)(stack + 1) + stack->kmer_occ);
+		(uint64_t *)(stack + 1) + stack->kmer_table_size);
 
-	debug("stack(%p), kmer_occ(%u), new_stack(%p)",
-		stack, stack->kmer_occ, new_stack);
+	debug("stack(%p), kmer_table_size(%u), new_stack(%p)",
+		stack, stack->kmer_table_size, new_stack);
 
 	/* link to previous stack */
 	new_stack->prev_stack = stack;
@@ -1034,10 +1035,10 @@ struct gref_iter_stack_s *gref_iter_add_stack(
 
 	/* copy buffer */
 	new_stack->len = stack->len;
-	new_stack->cnt_arr = stack->cnt_arr;
 	new_stack->kmer_idx = 0;
-	new_stack->kmer_occ = stack->kmer_occ;
-	memcpy(&new_stack->kmer, &stack->kmer, stack->kmer_occ * sizeof(uint64_t));
+	new_stack->kmer_table_size = stack->kmer_table_size;
+	new_stack->cnt_arr = stack->cnt_arr;
+	memcpy(&new_stack->kmer, &stack->kmer, stack->kmer_table_size * sizeof(uint64_t));
 	return(new_stack);
 }
 
@@ -1087,43 +1088,43 @@ int gref_iter_append_base(
 
 	uint64_t pcnt = popcnt_table[c];
 	stack->cnt_arr = (stack->cnt_arr<<2) | pcnt;
-	uint64_t occ = stack->kmer_occ;
+	uint64_t table_size = stack->kmer_table_size;
 
 	/* branch */
 	switch(3 - pcnt) {
-		case 0: memcpy(&stack->kmer[2 * occ], stack->kmer, sizeof(uint64_t) * occ);
-		case 1: memcpy(&stack->kmer[occ], stack->kmer, sizeof(uint64_t) * occ);
+		case 0: memcpy(&stack->kmer[2 * table_size], stack->kmer, sizeof(uint64_t) * table_size);
+		case 1: memcpy(&stack->kmer[table_size], stack->kmer, sizeof(uint64_t) * table_size);
 		/* fall through */
 		default: break;		/* return(-1); */
 	}
 
 	/* append to vector */
 	for(int64_t j = 0; j < pcnt; j++) {
-		for(int64_t k = 0; k < occ; k++) {
-			stack->kmer[j * occ + k] =
-				(stack->kmer[j * occ + k]>>2) | (encode_2bit[c][j]<<stack->shift_len);
+		for(int64_t k = 0; k < table_size; k++) {
+			stack->kmer[j * table_size + k] =
+				(stack->kmer[j * table_size + k]>>2) | (encode_2bit[c][j]<<stack->shift_len);
 			debug("%lld, %lld, %lld, %x, %llx",
-				j, k, j * occ + k, encode_2bit[c][j], stack->kmer[j * occ + k]);
+				j, k, j * table_size + k, encode_2bit[c][j], stack->kmer[j * table_size + k]);
 		}
 	}
 
-	/* update occ */
-	occ *= pcnt;
+	/* update table_size */
+	table_size *= pcnt;
 
 	/* merge (shrink buffer) */
 	uint64_t shrink_skip = 0x03 & (stack->cnt_arr >> (stack->shift_len + 2));
-	debug("cnt_arr(%llx), occ(%llu), shrink_skip(%llu)",
-		stack->cnt_arr, occ, shrink_skip);
+	debug("cnt_arr(%llx), table_size(%llu), shrink_skip(%llu)",
+		stack->cnt_arr, table_size, shrink_skip);
 	if(shrink_skip > 1) {
-		occ /= shrink_skip;
-		for(int64_t j = 0; j < occ; j++) {
+		table_size /= shrink_skip;
+		for(int64_t j = 0; j < table_size; j++) {
 			stack->kmer[j] = stack->kmer[j * shrink_skip];
 		}
 	}
 
-	/* write back occupancy */
+	/* write back table_size */
 	stack->kmer_idx = 0;
-	stack->kmer_occ = occ;
+	stack->kmer_table_size = table_size;
 	return(0);
 }
 
@@ -1189,10 +1190,10 @@ struct gref_iter_stack_s *gref_iter_fetch(
 			? base : (iter->seq_lim + (iter->seq_lim - base - 1));
 		stack->incr = (base < iter->seq_lim) ? 1 : -1;
 		stack->rem_len = MIN2(stack->global_rem_len, iter->hsec[gid].sec.len);
-		stack->len += stack->rem_len;
 
-		/* adjust global_rem_len */
+		/* adjust global_rem_len and len */
 		stack->global_rem_len -= stack->rem_len;
+		stack->len += stack->rem_len;
 
 		debug("gid(%u), seq_ptr(%p), len(%u), rem_len(%u), global_rem_len(%u)",
 			gid, stack->seq_ptr, stack->len, stack->rem_len, stack->global_rem_len);
@@ -1219,9 +1220,6 @@ struct gref_iter_stack_s *gref_iter_init_stack(
 
 	/* init stack */
 	stack->prev_stack = NULL;
-	// stack->global_rem_len = len;
-	stack->global_rem_len = iter->seed_len - 1;
-	stack->shift_len = iter->shift_len;
 
 	/* current section info */
 	stack->sec_gid = gid;
@@ -1233,12 +1231,18 @@ struct gref_iter_stack_s *gref_iter_init_stack(
 		? base : (iter->seq_lim + (iter->seq_lim - base - 1));
 	stack->incr = (base < iter->seq_lim) ? 1 : -1;
 	stack->rem_len = len;
+
+	/* global info */
+	stack->global_rem_len = iter->seed_len - 1;
+	stack->shift_len = iter->shift_len;
+
+	/* seq info (cont'd) */
 	stack->len = len - iter->seed_len;
 
 	/* init buffer and counter */
-	stack->cnt_arr = 0;
 	stack->kmer_idx = 0;
-	stack->kmer_occ = 1;
+	stack->kmer_table_size = 1;
+	stack->cnt_arr = 0;
 	stack->kmer[0] = 0;
 
 	for(int64_t i = 0; i < iter->seed_len; i++) {
@@ -1312,8 +1316,8 @@ struct gref_kmer_tuple_s gref_iter_next(
 		}); \
 	}
 
-	debug("stack(%p), kmer_idx(%u), kmer_occ(%u)", stack, stack->kmer_idx, stack->kmer_occ);
-	if(stack->kmer_idx < stack->kmer_occ) {
+	debug("stack(%p), kmer_idx(%u), kmer_table_size(%u)", stack, stack->kmer_idx, stack->kmer_table_size);
+	if(stack->kmer_idx < stack->kmer_table_size) {
 		return_kmer(iter, stack);
 	} else if((iter->stack = stack = gref_iter_fetch(iter, stack)) != NULL) {
 		return_kmer(iter, stack);
