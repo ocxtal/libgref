@@ -104,6 +104,7 @@ struct gref_params_s {
 	uint32_t hash_size;
 	uint16_t seq_head_margin;
 	uint16_t seq_tail_margin;
+	void *lmm;
 };
 typedef struct gref_params_s gref_params_t;
 #define GREF_PARAMS(...)			( &((struct gref_params_s const) { __VA_ARGS__ }) )

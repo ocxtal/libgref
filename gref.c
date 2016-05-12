@@ -21,10 +21,11 @@
 #include "psort/psort.h"
 #include "zf/zf.h"
 #include "arch/arch.h"
-#include "gref.h"
-#include "kvec.h"
-#include "sassert.h"
+// #include "kvec.h"
+#include "lmm.h"
 #include "log.h"
+#include "sassert.h"
+#include "gref.h"
 
 
 /* inline directive */
@@ -49,7 +50,7 @@
 /**
  * structs and typedefs
  */
-typedef kvec_t(struct gref_kmer_tuple_s) kvec_kmer_tuple_t;
+// typedef lmm_kvec_t(struct gref_kmer_tuple_s) kvec_kmer_tuple_t;
 
 
 /* the code supposes NULL == (void *)0 */
@@ -127,6 +128,8 @@ enum gref_type {
  * @brief aliased to gref_pool_t, gref_acv_t, and gref_idx_t
  */
 struct gref_s {
+	lmm_t *lmm;
+
 	/* name -> section mapping */
 	hmap_t *hmap;					/* name -> section_info hashmap */
 	uint32_t sec_cnt;
@@ -143,14 +146,14 @@ struct gref_s {
 	struct gref_params_s params;
 
 	/* sequence container */
-	kvec_t(uint8_t) seq;
+	lmm_kvec_t(uint8_t) seq;
 	uint64_t seq_len;
 	uint8_t const *seq_lim;
 
 	/* link info container */
-	kvec_t(struct gref_gid_pair_s) link;
+	lmm_kvec_t(struct gref_gid_pair_s) link;
 
-	/* kv_ptr(link) and link_table shares pointer */
+	/* lmm_kv_ptr(link) and link_table shares pointer */
 	uint64_t mask;
 	int64_t link_table_size;
 	uint32_t *link_table;
@@ -166,7 +169,7 @@ struct gref_s {
 		uint8_t const *seq,
 		int64_t len);
 };
-_static_assert(sizeof(struct gref_params_s) == 16);
+_static_assert(sizeof(struct gref_params_s) == 24);
 
 /**
  * @fn gref_encode_2bit
@@ -245,16 +248,16 @@ struct gref_seq_interval_s gref_copy_seq_ascii(
 	uint8_t const *seq,
 	int64_t len)
 {
-	uint64_t base = kv_size(gref->seq);
-	kv_reserve(gref->seq, base + len);
+	uint64_t base = lmm_kv_size(gref->seq);
+	lmm_kv_reserve(gref->lmm, gref->seq, base + len);
 
 	/* append */
 	for(int64_t i = 0; i < len; i++) {
-		kv_at(gref->seq, base + i) = gref_encode_4bit(seq[i]);
+		lmm_kv_at(gref->seq, base + i) = gref_encode_4bit(seq[i]);
 	}
 
 	/* resize array */
-	kv_size(gref->seq) += len;
+	lmm_kv_size(gref->seq) += len;
 	return((struct gref_seq_interval_s){
 		.base = base,
 		.tail = base + len
@@ -270,8 +273,8 @@ struct gref_seq_interval_s gref_copy_seq_4bit(
 	uint8_t const *seq,
 	int64_t len)
 {
-	uint64_t base = kv_size(gref->seq);
-	kv_pushm(gref->seq, seq, len);
+	uint64_t base = lmm_kv_size(gref->seq);
+	lmm_kv_pushm(gref->lmm, gref->seq, seq, len);
 	return((struct gref_seq_interval_s){
 		.base = base,
 		.tail = base + len
@@ -314,6 +317,7 @@ gref_pool_t *gref_init_pool(
 	restore(p.hash_size, 1024);
 	restore(p.seq_head_margin, 0);
 	restore(p.seq_tail_margin, 0);
+	restore(p.lmm, NULL);
 
 	#undef restore
 
@@ -330,14 +334,18 @@ gref_pool_t *gref_init_pool(
 		p.seq_head_margin, p.seq_tail_margin, p.num_threads, p.hash_size);
 
 	/* malloc mem */
-	struct gref_s *pool = (struct gref_s *)malloc(sizeof(struct gref_s));
+	lmm_t *lmm = (lmm_t *)p.lmm;
+	struct gref_s *pool = (struct gref_s *)lmm_malloc(lmm, sizeof(struct gref_s));
 	if(pool == NULL) {
 		return(NULL);
 	}
 	memset(pool, 0, sizeof(struct gref_s));
+	pool->lmm = lmm;
 
 	/* init hmap */
-	pool->hmap = hmap_init(p.hash_size, sizeof(struct gref_section_intl_s));
+	pool->hmap = hmap_init(
+		sizeof(struct gref_section_intl_s),
+		HMAP_PARAMS( .hmap_size = p.hash_size, .lmm = lmm ));
 	if(pool->hmap == NULL) {
 		goto _gref_init_pool_error_handler;
 	}
@@ -353,13 +361,13 @@ gref_pool_t *gref_init_pool(
 
 	/* init seq vector */
 	if(p.copy_mode != GREF_NOCOPY) {
-		kv_init(pool->seq);
+		lmm_kv_init(lmm, pool->seq);
 
 		/* make margin at the head (leave uninitialized) */
-		kv_reserve(pool->seq, p.seq_head_margin);
-		kv_size(pool->seq) = p.seq_head_margin;
+		lmm_kv_reserve(lmm, pool->seq, p.seq_head_margin);
+		lmm_kv_size(pool->seq) = p.seq_head_margin;
 	} else {
-		kv_ptr(pool->seq) = NULL;
+		lmm_kv_ptr(pool->seq) = NULL;
 
 		/* ignore margin option in nocopy mode */
 		p.seq_head_margin = 0;
@@ -369,7 +377,7 @@ gref_pool_t *gref_init_pool(
 	pool->seq_lim = NULL;
 
 	/* init link vector */
-	kv_init(pool->link);
+	lmm_kv_init(lmm, pool->link);
 
 	/* init seq encoder */
 	struct gref_seq_interval_s (*table[][3])(
@@ -396,9 +404,9 @@ gref_pool_t *gref_init_pool(
 _gref_init_pool_error_handler:;
 	if(pool != NULL) {
 		hmap_clean(pool->hmap); pool->hmap = NULL;
-		kv_destroy(pool->seq);
-		kv_destroy(pool->link);
-		free(pool);
+		lmm_kv_destroy(lmm, pool->seq);
+		lmm_kv_destroy(lmm, pool->link);
+		lmm_free(lmm, pool);
 	}
 	return(NULL);
 }
@@ -414,12 +422,12 @@ void gref_clean(
 	if(gref != NULL) {
 		/* cleanup, cleanup... */
 		hmap_clean(gref->hmap); gref->hmap = NULL;
-		kv_destroy(gref->seq);
-		kv_destroy(gref->link);
+		lmm_kv_destroy(gref->lmm, gref->seq);
+		lmm_kv_destroy(gref->lmm, gref->link);
 		// free(gref->link_table); gref->link_table = NULL;
-		free(gref->kmer_idx_table); gref->kmer_idx_table = NULL;
-		free(gref->kmer_table); gref->kmer_table = NULL;
-		free(gref);
+		lmm_free(gref->lmm, gref->kmer_idx_table); gref->kmer_idx_table = NULL;
+		lmm_free(gref->lmm, gref->kmer_table); gref->kmer_table = NULL;
+		lmm_free(gref->lmm, gref);
 	}
 	return;
 }
@@ -499,13 +507,13 @@ int gref_append_link(
 	uint32_t dst_id = hmap_get_id(pool->hmap, dst, dst_len);
 
 	/* add forward link */
-	kv_push(pool->link, ((struct gref_gid_pair_s){
+	lmm_kv_push(pool->lmm, pool->link, ((struct gref_gid_pair_s){
 		.from = _encode_id(src_id, src_ori),
 		.to = _encode_id(dst_id, dst_ori)
 	}));
 
 	/* add reverse link */
-	kv_push(pool->link, ((struct gref_gid_pair_s){
+	lmm_kv_push(pool->lmm, pool->link, ((struct gref_gid_pair_s){
 		.from = _encode_id(dst_id, _rev(dst_ori)),
 		.to = _encode_id(src_id, _rev(src_ori))
 	}));
@@ -599,8 +607,8 @@ void gref_add_tail_section(
 	} while(id != tail_id && len < 256);
 
 	/* make margin at the tail (leave uninitialized) */
-	kv_reserve(pool->seq, kv_size(pool->seq) + pool->params.seq_tail_margin);
-	kv_size(pool->seq) += pool->params.seq_tail_margin;
+	lmm_kv_reserve(pool->lmm, pool->seq, lmm_kv_size(pool->seq) + pool->params.seq_tail_margin);
+	lmm_kv_size(pool->seq) += pool->params.seq_tail_margin;
 
 	/* set info */
 	struct gref_section_intl_s *tail_sec =
@@ -628,14 +636,14 @@ int gref_build_link_idx_table(
 	struct gref_s *pool)
 {
 	int64_t link_idx_table_size = 2 * pool->sec_cnt;
-	int64_t link_table_size = kv_size(pool->link);
+	int64_t link_table_size = lmm_kv_size(pool->link);
 
 	/* store link table size */
 	pool->link_table_size = link_table_size;
 
 	/* sort by src, build src->dst mapping */
-	debug("sort src->dst mapping, size(%llu)", kv_size(pool->link));
-	if(psort_half(kv_ptr(pool->link), kv_size(pool->link),
+	debug("sort src->dst mapping, size(%llu)", lmm_kv_size(pool->link));
+	if(psort_half(lmm_kv_ptr(pool->link), lmm_kv_size(pool->link),
 		sizeof(struct gref_gid_pair_s), pool->params.num_threads) != 0) {
 
 		/* sort failed */
@@ -650,7 +658,7 @@ int gref_build_link_idx_table(
 	/* store link index */
 	sec_half[prev_gid].link_idx_base = 0;		/* head is always zero */
 	for(int64_t i = 0; i < link_table_size; i++) {
-		uint32_t gid = kv_at(pool->link, i).from;
+		uint32_t gid = lmm_kv_at(pool->link, i).from;
 		debug("i(%lld), gid(%u), prev_gid(%u)", i, gid, prev_gid);
 
 		if(prev_gid == gid) { continue; }
@@ -691,7 +699,7 @@ int gref_fw_copy_modify_seq(
 	uint8_t const *rv_lim = GREF_SEQ_LIM + (uint64_t)GREF_SEQ_LIM;
 
 	/* add offset to fw pos base, then calc rv pos base */
-	uint64_t seq_base = (uint64_t)kv_ptr(pool->seq) + pool->params.seq_head_margin;
+	uint64_t seq_base = (uint64_t)lmm_kv_ptr(pool->seq) + pool->params.seq_head_margin;
 	for(int64_t i = 0; i < pool->sec_cnt; i++) {
 		sec[i].fw_sec.base += seq_base;			/* convert pos to valid pointer */
 		sec[i].rv_sec.base = rv_lim - (uint64_t)sec[i].fw_sec.base - sec[i].fw_sec.len;
@@ -727,12 +735,12 @@ int gref_fr_copy_modify_seq(
 	debug("gref_fr_copy_modify_seq called");
 
 	/* append reverse sequence */
-	// uint64_t size = kv_size(pool->seq);
+	// uint64_t size = lmm_kv_size(pool->seq);
 	uint64_t size = 2 * pool->seq_len
 		+ pool->params.seq_head_margin
 		+ pool->params.seq_tail_margin;
-	kv_reserve(pool->seq, size);
-	if(kv_ptr(pool->seq) == NULL) { return(-1); }
+	lmm_kv_reserve(pool->lmm, pool->seq, size);
+	if(lmm_kv_ptr(pool->seq) == NULL) { return(-1); }
 
 	/* append revcomp seq */
 	uint8_t const comp[16] = {
@@ -741,11 +749,11 @@ int gref_fr_copy_modify_seq(
 	};
 	uint64_t fw_tail_pos = pool->seq_len + pool->params.seq_head_margin;
 	for(int64_t i = 0; i < pool->seq_len; i++) {
-		kv_at(pool->seq, fw_tail_pos + i) = comp[kv_at(pool->seq, fw_tail_pos - 1 - i)];
+		lmm_kv_at(pool->seq, fw_tail_pos + i) = comp[lmm_kv_at(pool->seq, fw_tail_pos - 1 - i)];
 	}
 
 	/* lim == 0x800000000000 in fw_copy mode */
-	uint8_t const *seq_base = kv_ptr(pool->seq) + pool->params.seq_head_margin;
+	uint8_t const *seq_base = lmm_kv_ptr(pool->seq) + pool->params.seq_head_margin;
 	uint8_t const *rv_lim = pool->seq_lim = seq_base + 2 * pool->seq_len;
 
 	/* add offset to fw pos base, then calc rv pos base */
@@ -783,16 +791,16 @@ int gref_flush_modified_seq(
 	struct gref_s *acv)
 {
 	if(acv->params.copy_mode == GREF_NOCOPY) {
-		kv_ptr(acv->seq) = NULL;
+		lmm_kv_ptr(acv->seq) = NULL;
 		return(0);
 	}
 
 	/* resize */
-	kv_resize(acv->seq, acv->seq_len);
-	if(kv_ptr(acv->seq) == NULL) { return(-1); }
+	lmm_kv_resize(acv->lmm, acv->seq, acv->seq_len);
+	if(lmm_kv_ptr(acv->seq) == NULL) { return(-1); }
 
 	/* subtract seq_base from fw_sec, clear rv_sec with NULL */
-	uint64_t seq_base = (uint64_t)kv_ptr(acv->seq) + acv->params.seq_head_margin;
+	uint64_t seq_base = (uint64_t)lmm_kv_ptr(acv->seq) + acv->params.seq_head_margin;
 	struct gref_section_intl_s *sec =
 		(struct gref_section_intl_s *)hmap_get_object(acv->hmap, 0);
 	for(int64_t i = 0; i < 2 * (acv->sec_cnt + 1); i++) {
@@ -811,16 +819,16 @@ int gref_shrink_link_table(
 	struct gref_s *pool)
 {
 	int64_t link_table_size = pool->link_table_size;
-	uint32_t *link_table = (uint32_t *)kv_ptr(pool->link);
+	uint32_t *link_table = (uint32_t *)lmm_kv_ptr(pool->link);
 
 	/* pack */
 	for(int64_t i = 0; i < link_table_size; i++) {
-		link_table[i] = kv_at(pool->link, i).to;
+		link_table[i] = lmm_kv_at(pool->link, i).to;
 	}
-	kv_resize(pool->link, link_table_size / 2);
+	lmm_kv_resize(pool->lmm, pool->link, link_table_size / 2);
 	
 	/* store info */
-	pool->link_table = (uint32_t *)kv_ptr(pool->link);
+	pool->link_table = (uint32_t *)lmm_kv_ptr(pool->link);
 	return((pool->link_table == NULL) ? -1 : 0);
 }
 
@@ -833,8 +841,8 @@ int gref_expand_link_table(
 {
 	/* resize mem */
 	int64_t link_table_size = acv->link_table_size;
-	kv_resize(acv->link, link_table_size);
-	uint32_t *link = (uint32_t *)kv_ptr(acv->link);
+	lmm_kv_resize(acv->lmm, acv->link, link_table_size);
+	uint32_t *link = (uint32_t *)lmm_kv_ptr(acv->link);
 
 	if(link == NULL) { return(-1); }
 
@@ -849,7 +857,7 @@ int gref_expand_link_table(
 			j >= sec_half[i].link_idx_base;
 			j--) {
 
-			kv_at(acv->link, j) = (struct gref_gid_pair_s){
+			lmm_kv_at(acv->link, j) = (struct gref_gid_pair_s){
 				.from = i,
 				.to = link[j]
 			};
@@ -936,7 +944,7 @@ gref_pool_t *gref_melt_archive(
 	}
 
 	/* remove kmer table */
-	free(gref->kmer_table); gref->kmer_table = NULL;
+	lmm_free(acv->lmm, gref->kmer_table); gref->kmer_table = NULL;
 	gref->kmer_table_size = 0;
 
 	/* expand table */
@@ -989,8 +997,10 @@ struct gref_iter_stack_s {
 /**
  * @struct gref_iter_s
  */
-#define GREF_ITER_INTL_MEM_ARR_LEN			( 4 )
+#define GREF_ITER_INTL_MEM_ARR_LEN			( 5 )
 struct gref_iter_s {
+	lmm_t *lmm;
+
 	/* global info */
 	uint32_t base_gid;
 	uint32_t tail_gid;
@@ -1007,7 +1017,7 @@ struct gref_iter_s {
 	struct gref_iter_stack_s *stack;
 	void *mem_arr[GREF_ITER_INTL_MEM_ARR_LEN];
 };
-_static_assert(sizeof(struct gref_iter_s) == 80);
+_static_assert(sizeof(struct gref_iter_s) == 96);
 
 /**
  * @fn gref_iter_add_stack
@@ -1265,11 +1275,12 @@ gref_iter_t *gref_iter_init(
 	if(gref == NULL || gref->type == GREF_POOL) { return(NULL); }
 
 	/* malloc mem */
-	struct gref_iter_s *iter = (struct gref_iter_s *)malloc(
+	struct gref_iter_s *iter = (struct gref_iter_s *)lmm_malloc(acv->lmm,
 		sizeof(struct gref_iter_s) + sizeof(uint64_t) * gref->iter_init_stack_size);
 	if(iter == NULL) {
 		return(NULL);
 	}
+	iter->lmm = acv->lmm;
 
 	/* init param container */
 	memset(iter->mem_arr, 0, sizeof(void *) * GREF_ITER_INTL_MEM_ARR_LEN);
@@ -1352,9 +1363,9 @@ void gref_iter_clean(
 
 	if(iter != NULL) {
 		for(int64_t i = 0; i < GREF_ITER_INTL_MEM_ARR_LEN; i++) {
-			free(iter->mem_arr[i]); iter->mem_arr[i] = NULL;
+			lmm_free(iter->lmm, iter->mem_arr[i]); iter->mem_arr[i] = NULL;
 		}
-		free((void *)iter);
+		lmm_free(iter->lmm, (void *)iter);
 	}
 	return;
 }
@@ -1370,14 +1381,14 @@ int64_t *gref_build_kmer_idx_table(
 	struct gref_kmer_tuple_s *arr,
 	int64_t size)
 {
-	kvec_t(int64_t) kmer_idx;
-	kv_init(kmer_idx);
+	lmm_kvec_t(int64_t) kmer_idx;
+	lmm_kv_init(acv->lmm, kmer_idx);
 
 	uint64_t kmer_idx_size = 0x01 << (2 * acv->params.k);
-	kv_reserve(kmer_idx, kmer_idx_size);
+	lmm_kv_reserve(acv->lmm, kmer_idx, kmer_idx_size);
 
 	uint64_t prev_kmer = 0;
-	kv_push(kmer_idx, prev_kmer);
+	lmm_kv_push(acv->lmm, kmer_idx, prev_kmer);
 	for(int64_t i = 0; i < size; i++) {
 		uint64_t kmer = arr[i].kmer;
 		debug("i(%lld), kmer(%llx), id(%u), pos(%u), prev_kmer(%llx)",
@@ -1390,15 +1401,15 @@ int64_t *gref_build_kmer_idx_table(
 		/* sequence update detected */
 		for(uint64_t j = prev_kmer + 1; j < kmer + 1; j++) {
 			debug("fill gaps j(%llx)", j);
-			kv_push(kmer_idx, i);
+			lmm_kv_push(acv->lmm, kmer_idx, i);
 		}
 		prev_kmer = kmer;
 	}
 	for(uint64_t j = prev_kmer; j < kmer_idx_size; j++) {
 		debug("fill tail gaps j(%llx)", j);
-		kv_push(kmer_idx, size);
+		lmm_kv_push(acv->lmm, kmer_idx, size);
 	}
-	return(kv_ptr(kmer_idx));
+	return(lmm_kv_ptr(kmer_idx));
 }
 
 /**
@@ -1416,7 +1427,7 @@ struct gref_gid_pos_s *gref_shrink_kmer_table(
 		packed_pos[i] = kmer_table[i].gid_pos;
 	}
 
-	return(realloc(kmer_table, sizeof(struct gref_gid_pos_s) * kmer_table_size));
+	return(lmm_realloc(acv->lmm, kmer_table, sizeof(struct gref_gid_pos_s) * kmer_table_size));
 }
 
 /**
@@ -1432,32 +1443,32 @@ gref_idx_t *gref_build_index(
 	}
 
 	/* enumerate kmers and pack into vector */
-	kvec_t(struct gref_kmer_tuple_s) v;
-	kv_init(v);
+	lmm_kvec_t(struct gref_kmer_tuple_s) v;
+	lmm_kv_init(acv->lmm, v);
 
 	struct gref_iter_s *iter = gref_iter_init(acv);
 	struct gref_kmer_tuple_s t;
 	while((t = gref_iter_next(iter)).kmer != GREF_ITER_KMER_TERM) {
-		kv_push(v, t);
+		lmm_kv_push(acv->lmm, v, t);
 	}
 	gref_iter_clean(iter);
 
 	/* sort kmers */
-	if(psort_half(kv_ptr(v), kv_size(v),
+	if(psort_half(lmm_kv_ptr(v), lmm_kv_size(v),
 		sizeof(struct gref_kmer_tuple_s), acv->params.num_threads) != 0) {
-		kv_destroy(v);
+		lmm_kv_destroy(acv->lmm, v);
 		goto _gref_build_index_error_handler;
 	}
 
 	/* build index of kmer table */
-	gref->kmer_idx_table = gref_build_kmer_idx_table(acv, kv_ptr(v), kv_size(v));
+	gref->kmer_idx_table = gref_build_kmer_idx_table(acv, lmm_kv_ptr(v), lmm_kv_size(v));
 	if(gref->kmer_idx_table == NULL) {
 		goto _gref_build_index_error_handler;
 	}
 
 	/* shrink table */
-	gref->kmer_table_size = kv_size(v);
-	gref->kmer_table = gref_shrink_kmer_table(acv, kv_ptr(v), kv_size(v));
+	gref->kmer_table_size = lmm_kv_size(v);
+	gref->kmer_table = gref_shrink_kmer_table(acv, lmm_kv_ptr(v), lmm_kv_size(v));
 	if(gref->kmer_table == NULL) {
 		goto _gref_build_index_error_handler;
 	}
@@ -1488,7 +1499,7 @@ gref_acv_t *gref_disable_index(
 	}
 
 	/* cleanup kmer_idx_table */
-	free(idx->kmer_idx_table); idx->kmer_idx_table = NULL;
+	lmm_free(idx->lmm, idx->kmer_idx_table); idx->kmer_idx_table = NULL;
 
 	/* change state */
 	gref->type = GREF_ACV;
@@ -1623,7 +1634,7 @@ uint8_t const *gref_get_ptr(
 	gref_t const *_gref)
 {
 	struct gref_s const *gref = (struct gref_s const *)_gref;
-	return((uint8_t const *)kv_ptr(gref->seq) + gref->params.seq_head_margin);
+	return((uint8_t const *)lmm_kv_ptr(gref->seq) + gref->params.seq_head_margin);
 }
 #endif
 
@@ -1832,7 +1843,7 @@ unittest()
 	assert(gref_get_total_len(acv) == 13, "len(%lld)", gref_get_total_len(acv));
 
 	/* get lim */
-	assert(gref_get_lim(acv) == kv_ptr(acv->seq) + 2 * acv->seq_len + 32, "lim(%p)", gref_get_lim(acv));
+	assert(gref_get_lim(acv) == lmm_kv_ptr(acv->seq) + 2 * acv->seq_len + 32, "lim(%p)", gref_get_lim(acv));
 
 	/* check bases at the head of the sections */
 	assert(gref_get_section(acv, 0)->base[0] == 0x04, "%x", gref_get_section(acv, 0)->base[0]);
