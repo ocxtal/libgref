@@ -186,7 +186,7 @@ uint8_t gref_encode_2bit(
 	enum bases {
 		A = 0x00, C = 0x01, G = 0x02, T = 0x03
 	};
-	uint8_t const table[] = {
+	static uint8_t const table[] = {
 		[_b('A')] = A,
 		[_b('C')] = C,
 		[_b('G')] = G,
@@ -215,7 +215,7 @@ uint8_t gref_encode_4bit(
 	enum bases {
 		A = 0x01, C = 0x02, G = 0x04, T = 0x08
 	};
-	uint8_t const table[] = {
+	static uint8_t const table[] = {
 		[_b('A')] = A,
 		[_b('C')] = C,
 		[_b('G')] = G,
@@ -743,7 +743,7 @@ int gref_fr_copy_modify_seq(
 	if(lmm_kv_ptr(pool->seq) == NULL) { return(-1); }
 
 	/* append revcomp seq */
-	uint8_t const comp[16] = {
+	static uint8_t const comp[16] = {
 		0x00, 0x08, 0x04, 0x0c, 0x02, 0x0a, 0x06, 0x0e,
 		0x01, 0x09, 0x05, 0x0d, 0x03, 0x0b, 0x07, 0x0f
 	};
@@ -1071,13 +1071,13 @@ int gref_iter_append_base(
 	uint8_t c)
 {
 	/* conversion tables */
-	uint8_t const popcnt_table[] = {
+	static uint8_t const popcnt_table[] = {
 		0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 0	/* ignore 0x0f */
 	};
 	enum bases {
 		A = 0x00, C = 0x01, G = 0x02, T = 0x03
 	};
-	uint8_t const encode_2bit[][3] = {
+	static uint8_t const encode_2bit[][3] = {
 		{},
 		{ A },
 		{ C },
