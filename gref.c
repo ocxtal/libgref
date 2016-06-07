@@ -1359,9 +1359,10 @@ void gref_iter_clean(
 	gref_iter_t *_iter)
 {
 	struct gref_iter_s *iter = (struct gref_iter_s *)_iter;
-	debug("stack(%p), iter(%p)", iter->stack, iter);
+	debug("iter(%p)", iter);
 
 	if(iter != NULL) {
+		debug("stack(%p), iter(%p)", iter->stack, iter);
 		for(int64_t i = 0; i < GREF_ITER_INTL_MEM_ARR_LEN; i++) {
 			lmm_free(iter->lmm, iter->mem_arr[i]); iter->mem_arr[i] = NULL;
 		}
