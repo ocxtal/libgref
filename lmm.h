@@ -29,7 +29,7 @@
 #define LMM_DEFAULT_BASE_SIZE		( 1024 )
 
 /* max */
-#define MAX2(x,y) 		( (x) > (y) ? (x) : (y) )
+#define LMM_MAX2(x,y) 		( (x) > (y) ? (x) : (y) )
 
 
 /**
@@ -58,7 +58,7 @@ lmm_t *lmm_init(
 		lmm->lim = base + _lmm_cutdown(base_size, 16);
 		return((lmm_t *)lmm);
 	} else {
-		base_size = MAX2(base_size, LMM_DEFAULT_BASE_SIZE);
+		base_size = LMM_MAX2(base_size, LMM_DEFAULT_BASE_SIZE);
 		struct lmm_s *lmm = (struct lmm_s *)malloc(base_size);
 		lmm->need_free = 1;
 		lmm->ptr = (void *)(lmm + 1);
