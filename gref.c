@@ -1978,7 +1978,7 @@ unittest()
 	/* total len */
 	assert(gref_get_total_len(acv) == cnt * len, "len(%lld)", gref_get_total_len(acv));
 
-	gref_clean(acv);	
+	gref_clean(acv);
 }
 
 
