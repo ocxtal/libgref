@@ -1940,13 +1940,13 @@ unittest()
 unittest()
 {
 	int64_t const len = 100000;
-	int64_t const cnt = 100;
+	int64_t const cnt = 1000;
 
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
 		.k = 3,
 		.seq_direction = GREF_FW_RV,
 		.seq_format = GREF_4BIT,
-		.copy_mode = GREF_NOCOPY,
+		.copy_mode = GREF_COPY,
 		.seq_head_margin = 32,
 		.seq_tail_margin = 32));
 
@@ -1977,9 +1977,6 @@ unittest()
 
 	/* total len */
 	assert(gref_get_total_len(acv) == cnt * len, "len(%lld)", gref_get_total_len(acv));
-
-	/* get lim */
-	assert(gref_get_lim(acv) == GREF_SEQ_LIM, "lim(%p)", gref_get_lim(acv));
 
 	gref_clean(acv);	
 }
