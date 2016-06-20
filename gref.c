@@ -50,9 +50,6 @@
 /**
  * structs and typedefs
  */
-// typedef lmm_kvec_t(struct gref_kmer_tuple_s) kvec_kmer_tuple_t;
-
-
 /* the code supposes NULL == (void *)0 */
 _static_assert(NULL == (void *)0);
 
@@ -322,7 +319,7 @@ gref_pool_t *gref_init_pool(
 	#undef restore
 
 	/* check sanity */
-	if((uint32_t)p.k > 32) { return(NULL); }
+	if(p.k < 4 || p.k > 32) { return(NULL); }
 	if((uint8_t)p.seq_format > GREF_4BIT) { return(NULL); }
 	if((uint8_t)p.copy_mode > GREF_NOCOPY) { return(NULL); }
 	p.seq_head_margin = _roundup(p.seq_head_margin, 16);
@@ -760,7 +757,7 @@ int gref_fr_copy_modify_seq(
 	for(int64_t i = 0; i < pool->sec_cnt; i++) {
 		sec[i].rv_sec.base = rv_lim - (uint64_t)sec[i].fw_sec.base - sec[i].fw_sec.len;
 		sec[i].fw_sec.base += (uint64_t)seq_base;	/* convert pos to valid pointer */
-		debug("%llu", sec[i].rv_sec.base - sec[i].fw_sec.base);
+		debug("%llu", (uint64_t)(sec[i].rv_sec.base - sec[i].fw_sec.base));
 	}
 	return(0);
 }
@@ -797,6 +794,7 @@ int gref_flush_modified_seq(
 
 	/* resize */
 	lmm_kv_resize(acv->lmm, acv->seq, acv->seq_len);
+	lmm_kv_size(acv->seq) = acv->seq_len;
 	if(lmm_kv_ptr(acv->seq) == NULL) { return(-1); }
 
 	/* subtract seq_base from fw_sec, clear rv_sec with NULL */
@@ -826,6 +824,8 @@ int gref_shrink_link_table(
 		link_table[i] = lmm_kv_at(pool->link, i).to;
 	}
 	lmm_kv_resize(pool->lmm, pool->link, link_table_size / 2);
+	lmm_kv_size(pool->link) = link_table_size / 2;
+	debug("shrink ptr(%p), size(%llu)", lmm_kv_ptr(pool->link), link_table_size / 2);
 	
 	/* store info */
 	pool->link_table = (uint32_t *)lmm_kv_ptr(pool->link);
@@ -981,7 +981,7 @@ struct gref_iter_stack_s {
 	/* sequence info */
 	uint32_t rem_len;
 	int8_t incr;
-	uint8_t pad;
+	uint8_t conv_table;
 
 	/* global params */
 	uint8_t global_rem_len;
@@ -1007,7 +1007,7 @@ struct gref_iter_s {
 	/* global info */
 	uint32_t base_gid;
 	uint32_t tail_gid;
-	uint32_t reserved1;
+	uint32_t step_gid;
 	uint8_t seed_len;
 	uint8_t shift_len;
 	uint16_t reserved2;
@@ -1078,10 +1078,10 @@ int gref_iter_append_base(
 	static uint8_t const popcnt_table[] = {
 		0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 0	/* ignore 0x0f */
 	};
-	enum bases {
-		A = 0x00, C = 0x01, G = 0x02, T = 0x03
+	enum shift_size {
+		A = 0x00, C = 0x02, G = 0x04, T = 0x06
 	};
-	static uint8_t const encode_2bit[][3] = {
+	static uint8_t const shift_table[][3] = {
 		{},
 		{ A },
 		{ C },
@@ -1101,7 +1101,7 @@ int gref_iter_append_base(
 	};
 
 	uint64_t pcnt = popcnt_table[c];
-	stack->cnt_arr = (stack->cnt_arr<<2) | pcnt;
+	stack->cnt_arr = (stack->cnt_arr>>2) | (pcnt<<(stack->shift_len + 2));
 	uint64_t table_size = stack->kmer_table_size;
 
 	/* branch */
@@ -1113,12 +1113,14 @@ int gref_iter_append_base(
 	}
 
 	/* append to vector */
+	uint32_t mask = 0x03<<stack->shift_len;
 	for(int64_t j = 0; j < pcnt; j++) {
 		for(int64_t k = 0; k < table_size; k++) {
 			stack->kmer[j * table_size + k] =
-				(stack->kmer[j * table_size + k]>>2) | (encode_2bit[c][j]<<stack->shift_len);
-			debug("%lld, %lld, %lld, %x, %llx",
-				j, k, j * table_size + k, encode_2bit[c][j], stack->kmer[j * table_size + k]);
+				  (stack->kmer[j * table_size + k]>>2)
+				| (mask & (stack->conv_table<<(stack->shift_len - shift_table[c][j])));
+			debug("%lld, %lld, %lld, %x, %x, %llx",
+				j, k, j * table_size + k, shift_table[c][j], 0x03 & (stack->conv_table>>shift_table[c][j]), stack->kmer[j * table_size + k]);
 		}
 	}
 
@@ -1126,7 +1128,7 @@ int gref_iter_append_base(
 	table_size *= pcnt;
 
 	/* merge (shrink buffer) */
-	uint64_t shrink_skip = 0x03 & (stack->cnt_arr >> (stack->shift_len + 2));
+	uint64_t shrink_skip = 0x03 & stack->cnt_arr;
 	debug("cnt_arr(%llx), table_size(%llu), shrink_skip(%llu)",
 		stack->cnt_arr, table_size, shrink_skip);
 	if(shrink_skip > 1) {
@@ -1169,7 +1171,7 @@ struct gref_iter_stack_s *gref_iter_fetch(
 		gref_iter_append_base(stack, gref_iter_fetch_base(stack));
 		return(stack);
 	} else if(stack->rem_len == 0) {
-		debug("stack(%p), gid(%u), link_idx(%u), link_idx_base(%u), global_rem_len(%lld)",
+		debug("stack(%p), gid(%u), link_idx(%u), link_idx_base(%u), global_rem_len(%d)",
 			stack, stack->sec_gid, stack->link_idx, iter->hsec[stack->sec_gid + 1].link_idx_base, stack->global_rem_len);
 		/* return if no more seq remains */
 		if(stack->global_rem_len == 0) {
@@ -1205,6 +1207,7 @@ struct gref_iter_stack_s *gref_iter_fetch(
 			? base : (iter->seq_lim + (iter->seq_lim - base - 1));
 		stack->rem_len = MIN2(stack->global_rem_len, iter->hsec[gid].sec.len);
 		stack->incr = (base < iter->seq_lim) ? 1 : -1;
+		stack->conv_table = (base <iter->seq_lim) ? 0xe4 : 0x1b;
 
 		/* adjust global_rem_len and len */
 		stack->global_rem_len -= stack->rem_len;
@@ -1247,6 +1250,7 @@ struct gref_iter_stack_s *gref_iter_init_stack(
 		? base : (iter->seq_lim + (iter->seq_lim - base - 1));
 	stack->rem_len = len;
 	stack->incr = (base < iter->seq_lim) ? 1 : -1;
+	stack->conv_table = (base <iter->seq_lim) ? 0xe4 : 0x1b;
 
 	/* global info */
 	stack->global_rem_len = iter->seed_len - 1;
@@ -1265,7 +1269,7 @@ struct gref_iter_stack_s *gref_iter_init_stack(
 		debug("init fetch, stack(%p), stack->prev_stack(%p), rem_len(%u)", stack, stack->prev_stack, stack->rem_len);
 		stack = gref_iter_fetch(iter, stack);
 	}
-	debug("init_stack finished, stack(%p), rem_len(%u)", stack, stack->rem_len);
+	debug("init_stack finished, stack(%p), rem_len(%u), table_size(%u)", stack, stack->rem_len, stack->kmer_table_size);
 	return(stack);
 }
 
@@ -1274,13 +1278,20 @@ struct gref_iter_stack_s *gref_iter_init_stack(
  * @fn gref_iter_init
  */
 gref_iter_t *gref_iter_init(
-	gref_acv_t const *acv)
+	gref_acv_t const *acv,
+	gref_iter_params_t const *params)
 {
 	struct gref_s const *gref = (struct gref_s const *)acv;
 
-	debug("init_stack_size(%lld)", gref->iter_init_stack_size);
-
+	debug("init_stack_size(%lld)", gref->iter_init_stack_size);	
 	if(gref == NULL || gref->type == GREF_POOL) { return(NULL); }
+
+	/* restore params */
+	static struct gref_iter_params_s const default_params = {
+		.step_size = 1,
+		.seq_direction = GREF_FW_ONLY
+	};
+	params = (params == NULL) ? &default_params : params;
 
 	/* malloc mem */
 	struct gref_iter_s *iter = (struct gref_iter_s *)lmm_malloc(acv->lmm,
@@ -1296,6 +1307,7 @@ gref_iter_t *gref_iter_init(
 	/* iterate from section 0 */
 	iter->base_gid = 0;
 	iter->tail_gid = _encode_id(acv->sec_cnt, 0);
+	iter->step_gid = (params->seq_direction == GREF_FW_RV) ? 1 : 2;
 	
 	/* set params */
 	iter->seed_len = acv->params.k;
@@ -1313,7 +1325,7 @@ gref_iter_t *gref_iter_init(
 			debug("stack(%p), iter(%p), len(%u)", iter->stack, iter, iter->hsec[iter->base_gid].sec.len);
 			return((gref_iter_t *)iter);
 		}
-	} while((iter->base_gid += 2) < iter->tail_gid);
+	} while((iter->base_gid += iter->step_gid) < iter->tail_gid);
 
 	debug("no valid stack created");
 	lmm_free(iter->lmm, (void *)iter);
@@ -1337,8 +1349,8 @@ struct gref_kmer_tuple_s gref_iter_next(
 		return((struct gref_kmer_tuple_s){ \
 			.kmer = (_stack)->kmer[(_stack)->kmer_idx++], \
 			.gid_pos = (struct gref_gid_pos_s){ \
-				.gid = (_iter)->base_gid, \
-				.pos = (_stack)->len - (_stack)->rem_len \
+				.pos = (_stack)->len - (_stack)->rem_len, \
+				.gid = (_iter)->base_gid \
 			} \
 		}); \
 	}
@@ -1356,7 +1368,7 @@ struct gref_kmer_tuple_s gref_iter_next(
 
 	debug("stack == NULL, stack(%p)", stack);
 	/* update gid and stack for the next section */
-	while((iter->base_gid += 2) < iter->tail_gid) {
+	while((iter->base_gid += iter->step_gid) < iter->tail_gid) {
 		iter->stack = stack = gref_iter_init_stack(iter, (struct gref_iter_stack_s *)(iter + 1));
 
 		/* check if init_stack succeeded */
@@ -1372,8 +1384,8 @@ struct gref_kmer_tuple_s gref_iter_next(
 	return((struct gref_kmer_tuple_s){
 		.kmer = GREF_ITER_KMER_TERM,
 		.gid_pos = (struct gref_gid_pos_s){
-			.gid = (uint32_t)-1,
-			.pos = 0
+			.pos = 0,
+			.gid = (uint32_t)-1
 		}
 	});
 }
@@ -1411,8 +1423,11 @@ int64_t *gref_build_kmer_idx_table(
 	lmm_kvec_t(int64_t) kmer_idx;
 	lmm_kv_init(acv->lmm, kmer_idx);
 
+	/* may fail when main memory is small */
 	uint64_t kmer_idx_size = 0x01 << (2 * acv->params.k);
 	lmm_kv_reserve(acv->lmm, kmer_idx, kmer_idx_size);
+	debug("ptr(%p), size(%llu)", lmm_kv_ptr(kmer_idx), kmer_idx_size);
+	if(lmm_kv_ptr(kmer_idx) == NULL) { return(NULL); }
 
 	uint64_t prev_kmer = 0;
 	lmm_kv_push(acv->lmm, kmer_idx, prev_kmer);
@@ -1473,7 +1488,11 @@ gref_idx_t *gref_build_index(
 	lmm_kvec_t(struct gref_kmer_tuple_s) v;
 	lmm_kv_init(acv->lmm, v);
 
-	struct gref_iter_s *iter = gref_iter_init(acv);
+	static struct gref_iter_params_s const iter_params = {
+		.step_size = 1,
+		.seq_direction = GREF_FW_RV
+	};
+	struct gref_iter_s *iter = gref_iter_init(acv, &iter_params);
 	struct gref_kmer_tuple_s t;
 	int64_t i = 0;
 	while((t = gref_iter_next(iter)).gid_pos.gid != (uint32_t)-1) {
@@ -1486,12 +1505,14 @@ gref_idx_t *gref_build_index(
 	if(psort_half(lmm_kv_ptr(v), lmm_kv_size(v),
 		sizeof(struct gref_kmer_tuple_s), acv->params.num_threads) != 0) {
 		lmm_kv_destroy(acv->lmm, v);
+		debug("sort failed");
 		goto _gref_build_index_error_handler;
 	}
 
 	/* build index of kmer table */
 	gref->kmer_idx_table = gref_build_kmer_idx_table(acv, lmm_kv_ptr(v), lmm_kv_size(v));
 	if(gref->kmer_idx_table == NULL) {
+		debug("failed to build index table");
 		goto _gref_build_index_error_handler;
 	}
 
@@ -1499,6 +1520,7 @@ gref_idx_t *gref_build_index(
 	gref->kmer_table_size = lmm_kv_size(v);
 	gref->kmer_table = gref_shrink_kmer_table(acv, lmm_kv_ptr(v), lmm_kv_size(v));
 	if(gref->kmer_table == NULL) {
+		debug("failed to shrink");
 		goto _gref_build_index_error_handler;
 	}
 
@@ -1742,7 +1764,7 @@ char *unittest_generate_random_sequence(
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3));
+		.k = 4));
 
 	assert(pool != NULL);
 
@@ -1753,7 +1775,7 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_head_margin = 32,
 		.seq_tail_margin = 32));
 
@@ -1788,7 +1810,7 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_direction = GREF_FW_ONLY,
 		.copy_mode = GREF_COPY,
 		.seq_head_margin = 32,
@@ -1830,7 +1852,7 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_direction = GREF_FW_ONLY,
 		.seq_format = GREF_4BIT,
 		.copy_mode = GREF_NOCOPY,
@@ -1873,7 +1895,7 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_direction = GREF_FW_RV,
 		.copy_mode = GREF_COPY,
 		.seq_head_margin = 32,
@@ -1918,7 +1940,7 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_direction = GREF_FW_RV,
 		.seq_format = GREF_4BIT,
 		.copy_mode = GREF_NOCOPY,
@@ -1971,7 +1993,7 @@ unittest()
 	int64_t const cnt = 1000;
 
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_direction = GREF_FW_RV,
 		.seq_format = GREF_4BIT,
 		.copy_mode = GREF_COPY,
@@ -1983,7 +2005,7 @@ unittest()
 
 		/* name */
 		char buf[1024];
-		sprintf(buf, "seq%lld", i);
+		sprintf(buf, "seq%" PRId64 "", i);
 
 		/* seq */
 		char *seq = unittest_generate_random_sequence(len);
@@ -2014,9 +2036,10 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_head_margin = 32,
-		.seq_tail_margin = 32));
+		.seq_tail_margin = 32,
+		.seq_direction = GREF_FW_ONLY));
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
 	gref_append_segment(pool, _str("sec1"), _seq("M"));
 	gref_append_link(pool, _str("sec0"), 0, _str("sec1"), 0);
@@ -2028,7 +2051,7 @@ unittest()
 	gref_acv_t *acv = gref_freeze_pool(pool);
 
 	/* create iterator */
-	gref_iter_t *iter = gref_iter_init(acv);
+	gref_iter_t *iter = gref_iter_init(acv, NULL);
 	assert(iter != NULL, "%p", iter);
 
 	/* enumerate */
@@ -2045,67 +2068,87 @@ unittest()
 	struct gref_kmer_tuple_s t;
 
 	/* sec0 */
-	t = _f(iter); assert(_check_kmer(t, "GGA", 0, 0), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GGG", 0, 0), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GAA", 0, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GGA", 0, 1), _print_kmer(t));
-	
+	t = _f(iter); assert(_check_kmer(t, "GGAA", 0, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGGA", 0, 0), _print_kmer(t));
+
 	/* sec0-sec1 */
-	t = _f(iter); assert(_check_kmer(t, "AAA", 0, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GAA", 0, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "AAC", 0, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GAC", 0, 2), _print_kmer(t));
-	
+	t = _f(iter); assert(_check_kmer(t, "GAAA", 0, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGAA", 0, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAAC", 0, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGAC", 0, 1), _print_kmer(t));
+
 	/* sec0-sec1-sec2 */
-	t = _f(iter); assert(_check_kmer(t, "AAA", 0, 3), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "ACA", 0, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AAAA", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAAA", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACA", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GACA", 0, 2), _print_kmer(t));
+
+	t = _f(iter); assert(_check_kmer(t, "AAAC", 0, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACAC", 0, 3), _print_kmer(t));
 
 	/* sec0-sec2 */
-	t = _f(iter); assert(_check_kmer(t, "AAA", 0, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GAA", 0, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "AAC", 0, 3), _print_kmer(t));
-	
+	t = _f(iter); assert(_check_kmer(t, "GAAA", 0, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGAA", 0, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AAAC", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAAC", 0, 2), _print_kmer(t));
+
+	t = _f(iter); assert(_check_kmer(t, "AACA", 0, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACC", 0, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACG", 0, 3), _print_kmer(t));
+
 	/* sec1-sec2 */
-	t = _f(iter); assert(_check_kmer(t, "AAC", 1, 0), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CAC", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACA", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CACA", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACC", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CACC", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACG", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CACG", 1, 0), _print_kmer(t));
 
 	/* sec2 */
-	t = _f(iter); assert(_check_kmer(t, "ACA", 2, 0), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "ACC", 2, 0), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "ACG", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACAA", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACCA", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACGA", 2, 0), _print_kmer(t));
+	
+	t = _f(iter); assert(_check_kmer(t, "ACAC", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACCC", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACGC", 2, 0), _print_kmer(t));
+	
+	t = _f(iter); assert(_check_kmer(t, "ACAG", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACCG", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACGG", 2, 0), _print_kmer(t));
 
-	t = _f(iter); assert(_check_kmer(t, "CAA", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CCA", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CGA", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CAAG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCAG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGAG", 2, 1), _print_kmer(t));
 	
-	t = _f(iter); assert(_check_kmer(t, "CAC", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CCC", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CGC", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CACG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCCG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGCG", 2, 1), _print_kmer(t));
 	
-	t = _f(iter); assert(_check_kmer(t, "CAG", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CCG", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CGG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CAGG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCGG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGGG", 2, 1), _print_kmer(t));
 
-	t = _f(iter); assert(_check_kmer(t, "AAG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CAG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GAG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AAGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CAGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAGT", 2, 2), _print_kmer(t));
 	
-	t = _f(iter); assert(_check_kmer(t, "ACG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CCG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GCG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GCGT", 2, 2), _print_kmer(t));
 	
-	t = _f(iter); assert(_check_kmer(t, "AGG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CGG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GGG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AGGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGGT", 2, 2), _print_kmer(t));
 	
-	t = _f(iter); assert(_check_kmer(t, "AGT", 2, 3), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CGT", 2, 3), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GGT", 2, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AGTG", 2, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGTG", 2, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGTG", 2, 3), _print_kmer(t));
 
-	t = _f(iter); assert(_check_kmer(t, "GTG", 2, 4), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "TGT", 2, 5), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GTGT", 2, 4), _print_kmer(t));
 
 	t = _f(iter); assert(t.kmer == GREF_ITER_KMER_TERM, "%llx, %llx", t.kmer, GREF_ITER_KMER_TERM);
+	assert(t.gid_pos.gid == (uint32_t)-1, "gid(%u)", t.gid_pos.gid);
 
 	#undef _f
 	#undef _check_kmer
@@ -2119,7 +2162,7 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_head_margin = 32,
 		.seq_tail_margin = 32));
 
@@ -2151,7 +2194,7 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_head_margin = 32,
 		.seq_tail_margin = 32));
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
@@ -2165,7 +2208,7 @@ unittest()
 	gref_acv_t *idx = gref_build_index(gref_freeze_pool(pool));
 
 	/* create iterator */
-	gref_iter_t *iter = gref_iter_init(idx);
+	gref_iter_t *iter = gref_iter_init(idx, NULL);
 	assert(iter != NULL, "%p", iter);
 
 	/* enumerate */
@@ -2182,67 +2225,87 @@ unittest()
 	struct gref_kmer_tuple_s t;
 
 	/* sec0 */
-	t = _f(iter); assert(_check_kmer(t, "GGA", 0, 0), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GGG", 0, 0), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GAA", 0, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GGA", 0, 1), _print_kmer(t));
-	
+	t = _f(iter); assert(_check_kmer(t, "GGAA", 0, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGGA", 0, 0), _print_kmer(t));
+
 	/* sec0-sec1 */
-	t = _f(iter); assert(_check_kmer(t, "AAA", 0, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GAA", 0, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "AAC", 0, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GAC", 0, 2), _print_kmer(t));
-	
+	t = _f(iter); assert(_check_kmer(t, "GAAA", 0, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGAA", 0, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAAC", 0, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGAC", 0, 1), _print_kmer(t));
+
 	/* sec0-sec1-sec2 */
-	t = _f(iter); assert(_check_kmer(t, "AAA", 0, 3), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "ACA", 0, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AAAA", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAAA", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACA", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GACA", 0, 2), _print_kmer(t));
+
+	t = _f(iter); assert(_check_kmer(t, "AAAC", 0, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACAC", 0, 3), _print_kmer(t));
 
 	/* sec0-sec2 */
-	t = _f(iter); assert(_check_kmer(t, "AAA", 0, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GAA", 0, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "AAC", 0, 3), _print_kmer(t));
-	
+	t = _f(iter); assert(_check_kmer(t, "GAAA", 0, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGAA", 0, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AAAC", 0, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAAC", 0, 2), _print_kmer(t));
+
+	t = _f(iter); assert(_check_kmer(t, "AACA", 0, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACC", 0, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACG", 0, 3), _print_kmer(t));
+
 	/* sec1-sec2 */
-	t = _f(iter); assert(_check_kmer(t, "AAC", 1, 0), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CAC", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACA", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CACA", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACC", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CACC", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AACG", 1, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CACG", 1, 0), _print_kmer(t));
 
 	/* sec2 */
-	t = _f(iter); assert(_check_kmer(t, "ACA", 2, 0), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "ACC", 2, 0), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "ACG", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACAA", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACCA", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACGA", 2, 0), _print_kmer(t));
+	
+	t = _f(iter); assert(_check_kmer(t, "ACAC", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACCC", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACGC", 2, 0), _print_kmer(t));
+	
+	t = _f(iter); assert(_check_kmer(t, "ACAG", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACCG", 2, 0), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACGG", 2, 0), _print_kmer(t));
 
-	t = _f(iter); assert(_check_kmer(t, "CAA", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CCA", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CGA", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CAAG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCAG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGAG", 2, 1), _print_kmer(t));
 	
-	t = _f(iter); assert(_check_kmer(t, "CAC", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CCC", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CGC", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CACG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCCG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGCG", 2, 1), _print_kmer(t));
 	
-	t = _f(iter); assert(_check_kmer(t, "CAG", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CCG", 2, 1), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CGG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CAGG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCGG", 2, 1), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGGG", 2, 1), _print_kmer(t));
 
-	t = _f(iter); assert(_check_kmer(t, "AAG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CAG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GAG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AAGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CAGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GAGT", 2, 2), _print_kmer(t));
 	
-	t = _f(iter); assert(_check_kmer(t, "ACG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CCG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GCG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "ACGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CCGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GCGT", 2, 2), _print_kmer(t));
 	
-	t = _f(iter); assert(_check_kmer(t, "AGG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CGG", 2, 2), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GGG", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AGGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGGT", 2, 2), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGGT", 2, 2), _print_kmer(t));
 	
-	t = _f(iter); assert(_check_kmer(t, "AGT", 2, 3), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "CGT", 2, 3), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "GGT", 2, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "AGTG", 2, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "CGTG", 2, 3), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GGTG", 2, 3), _print_kmer(t));
 
-	t = _f(iter); assert(_check_kmer(t, "GTG", 2, 4), _print_kmer(t));
-	t = _f(iter); assert(_check_kmer(t, "TGT", 2, 5), _print_kmer(t));
+	t = _f(iter); assert(_check_kmer(t, "GTGT", 2, 4), _print_kmer(t));
 
 	t = _f(iter); assert(t.kmer == GREF_ITER_KMER_TERM, "%llx, %llx", t.kmer, GREF_ITER_KMER_TERM);
+	assert(t.gid_pos.gid == (uint32_t)-1, "gid(%u)", t.gid_pos.gid);
 
 	#undef _f
 	#undef _check_kmer
@@ -2256,7 +2319,7 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_head_margin = 32,
 		.seq_tail_margin = 32));
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
@@ -2321,7 +2384,7 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_head_margin = 32,
 		.seq_tail_margin = 32));
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
@@ -2363,7 +2426,7 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_head_margin = 32,
 		.seq_tail_margin = 32));
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
@@ -2402,7 +2465,7 @@ unittest()
 unittest()
 {
 	gref_pool_t *pool = gref_init_pool(GREF_PARAMS(
-		.k = 3,
+		.k = 4,
 		.seq_head_margin = 32,
 		.seq_tail_margin = 32));
 	gref_append_segment(pool, _str("sec0"), _seq("GGRA"));
@@ -2415,9 +2478,9 @@ unittest()
 
 
 	/* without ambiguous bases */
-	struct gref_match_res_s r = gref_match(idx, (uint8_t const *)"GTG");
+	struct gref_match_res_s r = gref_match(idx, (uint8_t const *)"GTGT");
 	assert(r.gid_pos_arr != NULL, "%p", r.gid_pos_arr);
-	assert(r.len == 1, "%lld", r.len);
+	assert(r.len == 2, "%lld", r.len);
 
 	/* check pos */
 	assert(r.gid_pos_arr[0].pos == 4, "%u", r.gid_pos_arr[0].pos);
@@ -2427,9 +2490,17 @@ unittest()
 	assert(sec->gid == 4, "gid(%u)", sec->gid);
 	assert(sec->len == 8, "len(%u)", sec->len);
 
+	/* check pos */
+	assert(r.gid_pos_arr[1].pos == 4, "%u", r.gid_pos_arr[1].pos);
+
+	/* check section */
+	sec = gref_get_section(idx, r.gid_pos_arr[1].gid);
+	assert(sec->gid == 5, "gid(%u)", sec->gid);
+	assert(sec->len == 8, "len(%u)", sec->len);
+
 
 	/* with ambiguous bases */
-	r = gref_match(idx, (uint8_t const *)"GGG");
+	r = gref_match(idx, (uint8_t const *)"CGGG");
 	assert(r.gid_pos_arr != NULL, "%p", r.gid_pos_arr);
 	assert(r.len == 3, "%lld", r.len);
 
@@ -2438,7 +2509,7 @@ unittest()
 
 	/* check section */
 	sec = gref_get_section(idx, r.gid_pos_arr[0].gid);
-	assert(sec->gid == 0, "gid(%u)", sec->gid);
+	assert(sec->gid == 2, "gid(%u)", sec->gid);
 	assert(sec->len == 4, "len(%u)", sec->len);
 
 	/* check pos */
@@ -2446,15 +2517,15 @@ unittest()
 
 	/* check section */
 	sec = gref_get_section(idx, r.gid_pos_arr[1].gid);
-	assert(sec->gid == 2, "gid(%u)", sec->gid);
-	assert(sec->len == 4, "len(%u)", sec->len);
+	assert(sec->gid == 4, "gid(%u)", sec->gid);
+	assert(sec->len == 8, "len(%u)", sec->len);
 
 	/* check pos */
-	assert(r.gid_pos_arr[2].pos == 2, "%u", r.gid_pos_arr[2].pos);
+	assert(r.gid_pos_arr[2].pos == 3, "%u", r.gid_pos_arr[2].pos);
 
 	/* check section */
 	sec = gref_get_section(idx, r.gid_pos_arr[2].gid);
-	assert(sec->gid == 4, "gid(%u)", sec->gid);
+	assert(sec->gid == 5, "gid(%u)", sec->gid);
 	assert(sec->len == 8, "len(%u)", sec->len);
 
 	gref_clean(idx);
